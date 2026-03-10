@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.eggs/
+.venv/
+venv*/
+
+# Data (large, reproducible)
+initial_states/
+lifting/
+two_param_snapshots_pod_dofs/
+two_param_snapshots_rom_deim_dofs/
+local_rom/
+pod_basis_two_param/
+operators_two_param/
+newlygenerated_high*
+deim_basis.npz
+deim_ops.npz
+
+# Firedrake outputs
+*.h5
+*.pvd
+
+# Archive
+archive/
+
+# OS
+.DS_Store
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
