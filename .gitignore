@@ -34,3 +34,6 @@ archive/
 # IDE
 .vscode/
 .idea/
+
+# Figures
+*.png

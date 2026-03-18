@@ -178,21 +178,34 @@ def _setup_rom_solver(
 
     # ---- PETSc solver ----
     if solver_parameters is None:
+        # solver_parameters = {
+        #     'snes_type': 'newtonls',
+        #     'snes_linesearch_type': 'bt',
+        #     'snes_monitor': None,
+        #     'snes_converged_reason': None,
+        #     'snes_max_it': 100,
+        #     'snes_rtol': 1e-6,
+        #     'snes_atol': 1e-7,
+        #     'snes_stol': 1e-8,
+        #     'ksp_type': 'preonly',
+        #     'pc_type': 'lu',
+        #     'pc_factor_mat_solver_type': 'mumps',
+        #     'mat_type': 'aij',
+        # }
         solver_parameters = {
             'snes_type': 'newtonls',
             'snes_linesearch_type': 'bt',
             'snes_monitor': None,
             'snes_converged_reason': None,
-            'snes_max_it': 100,
-            'snes_rtol': 1e-6,
-            'snes_atol': 1e-7,
-            'snes_stol': 1e-8,
+            'snes_max_it': 150,          # bump from 100 — bifurcation points need more room
+            'snes_rtol': 1e-7,           # tighter — you want well-converged snapshots for POD
+            'snes_atol': 1e-8,          # tighter — matters for continuation where initial residual is small
+            'snes_stol': 1e-12,          # very tight — don't let stagnation fake convergence
             'ksp_type': 'preonly',
             'pc_type': 'lu',
             'pc_factor_mat_solver_type': 'mumps',
             'mat_type': 'aij',
         }
-
     rom_problem = NonlinearVariationalProblem(F, w_rom, J=J)
     solver = NonlinearVariationalSolver(
         rom_problem,
@@ -348,6 +361,10 @@ def solve_rom(
 
     print(f"  ||alpha|| = {np.linalg.norm(velocity_coeffs):.6e}")
     print(f"  ||beta||  = {np.linalg.norm(pressure_coeffs):.6e}")
+    print("")
+
+    print("#"*100)
+    print("")
 
     return solution
 

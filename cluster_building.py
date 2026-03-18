@@ -284,10 +284,13 @@ def cluster_kmeans(S_tilde, n_clusters, n_init=10, random_state=42):
 
     return km.labels_, km.cluster_centers_, km.inertia_
 def select_cluster(clustering, Re, amp):
+    """Parameter-space cluster selection with normalized distances."""
     query    = np.array([Re, amp])
     centers  = np.array([clustering.parameter_centroid(k)
                          for k in range(clustering.n_clusters)])
-    distances = np.linalg.norm(centers - query, axis=1)
+    scales = np.ptp(centers, axis=0)
+    scales[scales == 0] = 1.0
+    distances = np.linalg.norm((centers - query) / scales, axis=1)
     best = int(np.argmin(distances))
 
     print(f"  Query (Re={Re}, amp={amp})")
@@ -295,3 +298,129 @@ def select_cluster(clustering, Re, amp):
         marker = " ←" if k == best else ""
         print(f"  Cluster {k}: distance={d:.4f}{marker}")
     return best
+
+
+def precompute_fast_selection(clustering, operators, M_u):
+    """
+    Precompute data for reduced-coordinate cluster selection.
+
+    For each cluster j, stores:
+        c_norm_sq[j] = ||c_j||²_M   (scalar)
+    For each pair (i, j), stores:
+        cross[i,j] = Z_i^T M c_j    (vector, length n_modes_i)
+
+    Then: ||Z_i a - c_j||²_M = ||a||² - 2 a^T cross[i,j] + c_norm_sq[j]
+    (uses M-orthonormality: Z_i^T M Z_i = I)
+    """
+    K = clustering.n_clusters
+    centroids = clustering.centroids_original  # (n_dofs, K)
+
+    c_norm_sq = np.zeros(K)
+    for j in range(K):
+        c_j = centroids[:, j]
+        c_norm_sq[j] = float(c_j @ (M_u @ c_j))
+
+    cross = {}
+    for i in range(K):
+        Z_i = operators[i].Z_u  # (n_dofs, n_modes_i)
+        for j in range(K):
+            c_j = centroids[:, j]
+            cross[(i, j)] = Z_i.T @ (M_u @ c_j)
+
+    clustering.fast_selection = {
+        'c_norm_sq': c_norm_sq,
+        'cross': cross,
+    }
+
+    print(f"  Fast selection precomputed: {K} clusters, {K*K} cross vectors")
+
+
+def select_cluster_reduced(clustering, a_prev, k_prev):
+    """
+    Select cluster using reduced coordinates (no DOF expansion).
+
+    Parameters
+    ----------
+    clustering : ClusteringResult with fast_selection populated
+    a_prev     : (n_modes,) reduced velocity coefficients from previous solve
+    k_prev     : int, cluster index of previous solve
+
+    Returns
+    -------
+    best : int, selected cluster index
+    """
+    fs = clustering.fast_selection
+    K = clustering.n_clusters
+
+    a_norm_sq = float(a_prev @ a_prev)  # ||a||² (M-orthonormal basis)
+
+    distances_sq = np.zeros(K)
+    for j in range(K):
+        distances_sq[j] = a_norm_sq - 2.0 * float(a_prev @ fs['cross'][(k_prev, j)]) + fs['c_norm_sq'][j]
+
+    best = int(np.argmin(distances_sq))
+
+    print(f"  Reduced selection (from cluster {k_prev}):")
+    for k in range(K):
+        marker = " ←" if k == best else ""
+        print(f"    Cluster {k}: d²_M = {distances_sq[k]:.4f}{marker}")
+    return best
+
+
+def precompute_change_of_basis(clustering, operators, M_u, M_p):
+    """
+    Precompute change-of-basis matrices for cluster switching.
+
+    CB_u[(i,j)]  = Z_j^T M_u Z_i             (velocity transfer)
+    CB_p[(i,j)]  = Z_j^T M_p Z_i             (pressure transfer)
+    d_u[(j,ell)] = Z_j^T M_u ψ_ell           (lifting correction per lifting function)
+
+    Uses operators[0].lifting_dofs which are shared across clusters.
+    """
+    K = clustering.n_clusters
+    lifting_dofs = operators[0].lifting_dofs  # (n_lifting, n_vel_dofs)
+    n_lifting = operators[0].n_lifting
+
+    CB_u = {}
+    CB_p = {}
+    d_u = {}
+
+    for j in range(K):
+        Z_u_j = operators[j].Z_u
+        Z_p_j = operators[j].Z_p
+
+        for ell in range(n_lifting):
+            d_u[(j, ell)] = Z_u_j.T @ (M_u @ lifting_dofs[ell])
+
+        for i in range(K):
+            if i == j:
+                continue
+            CB_u[(i, j)] = Z_u_j.T @ (M_u @ operators[i].Z_u)
+            CB_p[(i, j)] = Z_p_j.T @ (M_p @ operators[i].Z_p)
+
+    clustering.change_of_basis = {
+        'CB_u': CB_u,
+        'CB_p': CB_p,
+        'd_u': d_u,
+        'n_lifting': n_lifting,
+    }
+
+    n_pairs = K * (K - 1)
+    print(f"  Change-of-basis precomputed: {n_pairs} pairs, {n_lifting} lifting functions")
+
+
+def apply_change_of_basis(clustering, i, j, alpha_i, beta_i, thetas_old, thetas_new):
+    """
+    Transfer reduced coefficients from cluster i to cluster j.
+
+    α_j = C_ji α_i + Σ_ell (θ_ell^old - θ_ell^new) · d_u[(j, ell)]
+    β_j = C_pji β_i
+    """
+    cb = clustering.change_of_basis
+    alpha_j = cb['CB_u'][(i, j)] @ alpha_i
+    for ell in range(cb['n_lifting']):
+        delta = thetas_old[ell] - thetas_new[ell]
+        if delta != 0.0:
+            alpha_j += delta * cb['d_u'][(j, ell)]
+    beta_j = cb['CB_p'][(i, j)] @ beta_i
+    return alpha_j, beta_j

@@ -21,9 +21,7 @@ import numpy as np
 import os
 import time
 
-from firedrake import norm, Function, TestFunction, TrialFunction, inner, grad, dx, assemble
-import scipy.sparse as sp
-
+from firedrake import Function
 from Navier_Stokes import (
     NavierStokesSolution,
     setup_navier_stokes_problem,
@@ -58,14 +56,15 @@ from cluster_building import (
     load_clustering_result,
     clustering_is_valid,
     select_cluster,
+    precompute_fast_selection,
+    precompute_change_of_basis,
 )
 
-from deim import compute_and_save_basis, load_basis_metadata
-from online_operators import (
-    DEIMOnlineOperators,
-    build_deim_online_operators,
-    load_ops_metadata,
-)
+from deim import compute_and_save_basis
+from online_operators import DEIMOnlineOperators, build_deim_online_operators
+
+from deim_helpers import needs_basis_recompute, needs_ops_rebuild, deim_debug
+from sweep import build_snake_path, run_sweep, save_sweep_results
 
 # =============================================================================
 # CONFIGURATION
@@ -88,29 +87,37 @@ INNER_PRODUCT_TYPE = "H1"
 
 # --- Clustering ---
 N_CLUSTERS           = 3
-RECOMPUTE_CLUSTERING = False
 
 # --- ROM truncation ---
-N_VELOCITY_MODES   = 20
-N_PRESSURE_MODES   = 20
-N_SUPREMIZER_MODES = 20
-
+POD_ENERGY_TOL     = 1e-7    # keep 99.99% energy
+N_VELOCITY_MAX     = 50      # hard cap
+N_PRESSURE_MAX     = 50
+N_SUPREMIZER_MAX   = 50
 BOUNDARY_MARKERS = [1, 3, 4, 5, 6]
 
 # --- DEIM config (only used if USE_DEIM=True) ---
 DEIM_SNAPSHOT_DIR = "two_param_snapshots_pod_dofs"
 N_MODES_F         = None   # None = full
 N_MODES_J         = None
-M_F               = 30    # online truncation
-M_J               = 30
+DEIM_ENERGY_TOL   = 1e-7
+M_F_MAX           = 80
+M_J_MAX           = 80
 
 # --- Force recomputation ---
+
+RECOMPUTE_CLUSTERING = False
 RECOMPUTE_POD  = False
 RECOMPUTE_DEIM = False
 
 # --- Test parameters ---
 TEST_RE  = 92.0
-TEST_AMP = -0.15
+TEST_AMP = -0.7
+
+# --- Sweep ---
+RE_VALUES       = np.arange(30.0, 90.0, 5.0)
+AMP_VALUES      = np.arange(-1.0, 1.0, 0.1)
+FOM_EVERY       = 0       # 0 = skip FOM, N = compare every Nth point
+RUN_SWEEP       = True
 
 # =============================================================================
 # FILE STRUCTURE
@@ -136,91 +143,11 @@ def deim_ops_path(k):
 def pod_exists(k):
     return os.path.isdir(pod_dir(k)) and os.path.isdir(ops_dir(k))
 
-
-# =============================================================================
-# DEIM Cache Helpers
-# =============================================================================
-
-def needs_basis_recompute(basis_path, snapshot_dir, n_modes_F, n_modes_J):
-    """Check if DEIM basis needs recomputation."""
-    if not os.path.exists(basis_path):
-        return True, "Basis file not found"
-    try:
-        meta = load_basis_metadata(basis_path)
-    except Exception as e:
-        return True, f"Failed to load metadata: {e}"
-
-    if meta['snapshot_dir'] != snapshot_dir:
-        return True, f"Snapshot dir changed: '{meta['snapshot_dir']}' → '{snapshot_dir}'"
-
-    stored_F = meta['stored_n_modes_F']
-    stored_J = meta['stored_n_modes_J']
-
-    if n_modes_F is not None and stored_F != -1 and n_modes_F > stored_F:
-        return True, f"Need more F modes: stored={stored_F}, need={n_modes_F}"
-    if n_modes_J is not None and stored_J != -1 and n_modes_J > stored_J:
-        return True, f"Need more J modes: stored={stored_J}, need={n_modes_J}"
-
-    return False, "Up-to-date"
-
-
-def needs_ops_rebuild(ops_path, basis_path, m_F, m_J, n_rom_modes):
-    """Check if DEIM online operators need rebuild."""
-    if not os.path.exists(ops_path):
-        return True, "Operators file not found"
-    try:
-        meta = load_ops_metadata(ops_path)
-    except Exception as e:
-        return True, f"Failed to load metadata: {e}"
-
-    if meta['basis_path'] != basis_path:
-        return True, "Basis path changed"
-    if meta['m_F'] != m_F:
-        return True, f"m_F changed: {meta['m_F']} → {m_F}"
-    if meta['m_J'] != m_J:
-        return True, f"m_J changed: {meta['m_J']} → {m_J}"
-    if meta['n_rom_modes'] != n_rom_modes:
-        return True, f"ROM modes changed: {meta['n_rom_modes']} → {n_rom_modes}"
-
-    return False, "Up-to-date"
-
-
-# =============================================================================
-# DEIM Debug
-# =============================================================================
-
-def deim_debug(operators, deim_ops, problem, u_test):
-    """Quick sanity check: compare exact vs DEIM projection."""
-    Z_u = operators.Z_u
-    V_full = problem.velocity_space
-    v_test = TestFunction(V_full)
-
-    # Residual check
-    F_form = inner(grad(u_test) * u_test, v_test) * dx
-    F_vec = assemble(F_form).dat.data_ro.flatten()
-    F_exact = Z_u.T @ F_vec
-    F_deim = deim_ops.reduced_convective(F_vec)
-    err_F = np.linalg.norm(F_exact - F_deim) / np.linalg.norm(F_exact)
-
-    # Jacobian check
-    u_trial = TrialFunction(V_full)
-    J_form = (
-        inner(grad(u_trial) * u_test, v_test) * dx
-        + inner(grad(u_test) * u_trial, v_test) * dx
-    )
-    J_petsc = assemble(J_form, mat_type='aij').M.handle
-    indptr, indices, J_data = J_petsc.getValuesCSR()
-    J_scipy = sp.csr_matrix((J_data, indices, indptr), shape=J_petsc.getSize())
-    J_exact = Z_u.T @ (J_scipy @ Z_u)
-    J_mdeim = deim_ops.reduced_jacobian(J_data)
-    err_J = np.linalg.norm(J_exact - J_mdeim) / np.linalg.norm(J_exact)
-
-    print(f"    DEIM sanity check:")
-    print(f"      Residual error:  {err_F:.6e}")
-    print(f"      Jacobian error:  {err_J:.6e}")
-
-    return err_F, err_J
-
+def modes_for_tolerance(eigenvalues, tol, max_modes):
+    total = np.sum(eigenvalues)
+    cumulative = np.cumsum(eigenvalues) / total
+    n = int(np.searchsorted(cumulative, 1.0 - tol) + 1)
+    return min(n, max_modes)
 
 # =============================================================================
 # MAIN
@@ -236,11 +163,11 @@ def main():
     print("=" * 80)
     print(f"  USE_DEIM:     {USE_DEIM}")
     print(f"  AFFINE:       {COMPUTE_AFFINE_CONVECTION}")
-    print(f"  ROM modes:    vel={N_VELOCITY_MODES}, pres={N_PRESSURE_MODES}, sup={N_SUPREMIZER_MODES}")
+    print(f"  ROM modes:    tol={POD_ENERGY_TOL}, max={N_VELOCITY_MAX}")
     print(f"  Inner prod:   {INNER_PRODUCT_TYPE}")
     print(f"  Test params:  Re={TEST_RE}, amp={TEST_AMP}")
     if USE_DEIM:
-        print(f"  DEIM modes:   m_F={M_F}, m_J={M_J}")
+        print(f"  DEIM:         tol={DEIM_ENERGY_TOL}, max_F={M_F_MAX}, max_J={M_J_MAX}")
     print()
 
     # -------------------------------------------------------------------------
@@ -272,7 +199,9 @@ def main():
     print("\n--- Step 3: Energy-norm transform ---")
     M_u = assemble_inner_product_matrix(problem.velocity_space, INNER_PRODUCT_TYPE)
     M_p = assemble_inner_product_matrix(problem.pressure_space, 'L2')
-    L, P, S_tilde = apply_energy_transform(velocity_snapshots, M_u)
+    homo_snapshots = homogenize_snapshots(velocity_snapshots, parameters,u_base,u_control)
+
+    L, P, S_tilde = apply_energy_transform(homo_snapshots, M_u)
 
     print(f"  S_tilde: {S_tilde.shape}")
 
@@ -291,8 +220,6 @@ def main():
 
     clustering.summary()
 
-    # -------------------------------------------------------------------------
-    # Load DEIM snapshots once (shared across clusters)
     # -------------------------------------------------------------------------
     deim_snapshot_data = None
     if USE_DEIM:
@@ -315,9 +242,7 @@ def main():
         params_k = clustering.cluster_parameters(k)
         n_snap_k = len(idx)
 
-        # =====================================================================
-        # 5a: POD basis + reduced operators
-        # =====================================================================
+        # --- POD basis + reduced operators ---
         if RECOMPUTE_POD or not pod_exists(k):
             print(f"  Building POD + operators ...")
             S_u_k = velocity_snapshots[idx, :]
@@ -334,10 +259,15 @@ def main():
                 u_control=u_control,
                 amplitude_index=1,
                 boundary_markers=BOUNDARY_MARKERS,
-            ).truncate(
-                n_velocity=min(N_VELOCITY_MODES, n_snap_k - 1),
-                n_pressure=min(N_PRESSURE_MODES, n_snap_k - 1),
-                n_supremizer=min(N_SUPREMIZER_MODES, n_snap_k - 1),
+            )
+            n_vel = modes_for_tolerance(basis_k.velocity_eigenvalues, POD_ENERGY_TOL, N_VELOCITY_MAX)
+            n_pres = modes_for_tolerance(basis_k.pressure_eigenvalues, POD_ENERGY_TOL, N_PRESSURE_MAX)
+            n_sup = n_pres  # match pressure
+
+            basis_k = basis_k.truncate(
+                n_velocity=n_vel,
+                n_pressure=n_pres,
+                n_supremizer=n_sup,
             )
 
             operators_k = build_reduced_operators(
@@ -353,11 +283,7 @@ def main():
             print(f"  Saved to {LOCAL_ROM_DIR}/cluster_{k}/")
         else:
             print(f"  Loading POD + operators ...")
-            basis_k = load_pod_basis(pod_dir(k)).truncate(
-                n_velocity=N_VELOCITY_MODES,
-                n_pressure=N_PRESSURE_MODES,
-                n_supremizer=N_SUPREMIZER_MODES,
-            )
+            basis_k = load_pod_basis(pod_dir(k))
             operators_k = load_reduced_operators(ops_dir(k))
 
         print(f"    {basis_k.n_velocity_modes} vel + "
@@ -367,9 +293,7 @@ def main():
         bases[k]     = basis_k
         operators[k] = operators_k
 
-        # =====================================================================
-        # 5b: DEIM basis + online operators (per cluster)
-        # =====================================================================
+        # --- DEIM basis + online operators ---
         if USE_DEIM:
             print(f"  DEIM for cluster {k} ...")
             Z_u_k = operators_k.Z_u
@@ -378,7 +302,6 @@ def main():
             bp = deim_basis_path(k)
             op = deim_ops_path(k)
 
-            # --- DEIM basis ---
             if RECOMPUTE_DEIM or RECOMPUTE_POD:
                 recompute_basis = True
                 reason = "forced recompute"
@@ -389,27 +312,17 @@ def main():
 
             if recompute_basis:
                 print(f"    Computing DEIM basis: {reason}")
-
-                # Use cluster snapshots for DEIM basis
                 deim_vel_k = deim_snapshot_data['velocity'][idx, :]
                 deim_params_k = np.array([deim_snapshot_data['parameters'][i] for i in idx])
                 if COMPUTE_AFFINE_CONVECTION:
                     deim_vel_k = homogenize_snapshots(
                         deim_vel_k, deim_params_k, u_base, u_control,
                     )
-
                 deim_vel_functions_k = dofs_to_functions(
                     deim_vel_k, problem.velocity_space
                 )
                 os.makedirs(os.path.dirname(bp), exist_ok=True)
-                # Number of DEIM snapshots in this cluster
                 n_deim_k = deim_vel_k.shape[0]
-
-                # Cap modes to available snapshots
-                # n_modes_F_k = min(N_MODES_F, n_deim_k) if N_MODES_F is not None else None
-                # n_modes_J_k = min(N_MODES_J, n_deim_k) if N_MODES_J is not None else None
-                # m_F_k = min(M_F, n_modes_F_k or n_deim_k)
-                # m_J_k = min(M_J, n_modes_J_k or n_deim_k)
                 compute_and_save_basis(
                     deim_vel_functions_k,
                     problem.velocity_space,
@@ -422,18 +335,23 @@ def main():
             else:
                 print(f"    Cached DEIM basis: {reason}")
 
-            # --- DEIM online operators ---
+            # --- Adaptive DEIM mode selection ---
+            deim_data = np.load(bp)
+            m_F_k = modes_for_tolerance(deim_data['eigenvalues_F'], DEIM_ENERGY_TOL, M_F_MAX)
+            m_J_k = modes_for_tolerance(deim_data['eigenvalues_J'], DEIM_ENERGY_TOL, M_J_MAX)
+            print(f"    DEIM adaptive: m_F={m_F_k}, m_J={m_J_k} (tol={DEIM_ENERGY_TOL})")
+
             if RECOMPUTE_DEIM or RECOMPUTE_POD:
                 rebuild_ops = True
                 reason = "forced recompute"
             else:
                 rebuild_ops, reason = needs_ops_rebuild(
-                    op, bp, M_F, M_J, n_rom_modes_k
+                    op, bp, m_F_k, m_J_k, n_rom_modes_k
                 )
 
             if rebuild_ops:
                 print(f"    Building DEIM operators: {reason}")
-                deim_ops_k = build_deim_online_operators(bp, Z_u_k, M_F, M_J)
+                deim_ops_k = build_deim_online_operators(bp, Z_u_k, m_F_k, m_J_k)
                 deim_ops_k.save(op, basis_path=bp)
             else:
                 print(f"    Cached DEIM operators: {reason}")
@@ -443,96 +361,121 @@ def main():
             deim_ops_dict[k] = deim_ops_k
         else:
             deim_ops_dict[k] = None
-    # -------------------------------------------------------------------------
-    # ADD THIS HERE BECASUE RECONSTRUCT USES IT
-    problem.reynolds.assign(TEST_RE)
-    problem.amplitude.assign(TEST_AMP)
-
-
 
     # -------------------------------------------------------------------------
-    print(f"\n--- Step 6: Online solve (Re={TEST_RE}, amp={TEST_AMP}) ---")
-    nu = 1.0 / TEST_RE
+    if not RUN_SWEEP:
+        problem.reynolds.assign(TEST_RE)
+        problem.amplitude.assign(TEST_AMP)
 
-    k = select_cluster(clustering, TEST_RE, TEST_AMP)
-    print(f"  Selected cluster: {k}")
+        print(f"\n--- Step 6: Online solve (Re={TEST_RE}, amp={TEST_AMP}) ---")
+        nu = 1.0 / TEST_RE
 
-    # Initial guess via projection
-    velocity_dofs = initial_solution.velocity.dat.data_ro.flatten()
-    pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
-    u_coeffs, p_coeffs = project_to_rom_coefficients(
-        velocity_dofs, pressure_dofs,
-        operators[k],
-        amp=TEST_AMP,
-        M_u=M_u,
-        M_p=M_p,
-    )
+        k = select_cluster(clustering, TEST_RE, TEST_AMP)
+        print(f"  Selected cluster: {k}")
 
-    # Build SubMeshDEIM if needed
-    deim_ops_k = deim_ops_dict[k]
-    submesh_deim = None
-    if USE_DEIM and deim_ops_k is not None:
-        submesh_deim = SubMeshDEIM(problem.velocity_space, deim_ops_k)
+        velocity_dofs = initial_solution.velocity.dat.data_ro.flatten()
+        pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
+        u_coeffs, p_coeffs = project_to_rom_coefficients(
+            velocity_dofs, pressure_dofs,
+            operators[k],
+            amp=TEST_AMP,
+            M_u=M_u,
+            M_p=M_p,
+        )
 
-        # Optional sanity check
-        u_test = Function(problem.velocity_space)
-        u_test.dat.data[:] = velocity_dofs.reshape(u_test.dat.data.shape)
-        deim_debug(operators[k], deim_ops_k, problem, u_test)
+        deim_ops_k = deim_ops_dict[k]
+        submesh_deim = None
+        if USE_DEIM and deim_ops_k is not None:
+            submesh_deim = SubMeshDEIM(problem.velocity_space, deim_ops_k)
 
-    t0 = time.perf_counter()
-    solution = solve_rom(
-        operators=operators[k],
-        nu=nu,
-        amp=TEST_AMP,
-        problem=problem,
-        deim_ops=deim_ops_k,
-        u_initial_guess=u_coeffs,
-        p_initial_guess =p_coeffs,
-        submesh_deim=submesh_deim,
-    )
-    t_rom = time.perf_counter() - t0
+            u_test = Function(problem.velocity_space)
+            u_test.dat.data[:] = velocity_dofs.reshape(u_test.dat.data.shape)
+            deim_debug(operators[k], deim_ops_k, problem, u_test)
 
-    solution_rom = reconstruct_solution(solution, operators[k], problem, amp = TEST_AMP)
+        t0 = time.perf_counter()
+        solution = solve_rom(
+            operators=operators[k],
+            nu=nu,
+            amp=TEST_AMP,
+            problem=problem,
+            deim_ops=deim_ops_k,
+            u_initial_guess=u_coeffs,
+            p_initial_guess=p_coeffs,
+            submesh_deim=submesh_deim,
+        )
+        t_rom = time.perf_counter() - t0
 
+        solution_rom = reconstruct_solution(solution, operators[k], problem, amp=TEST_AMP)
 
-    print(f"  Amplitude:  {solution.amplitude}")
-    print(f"  Converged:  {solution.converged}")
-    print(f"  Iterations: {solution.iterations}")
-    print(f"  ROM time:   {t_rom:.3f}s")
+        print(f"  Amplitude:  {solution.amplitude}")
+        print(f"  Converged:  {solution.converged}")
+        print(f"  Iterations: {solution.iterations}")
+        print(f"  ROM time:   {t_rom:.3f}s")
 
+        # ---------------------------------------------------------------------
+        print("\n--- Step 7: FOM comparison ---")
+        t0 = time.perf_counter()
+        hf_solution = solve_steady_navier_stokes(problem, initial_solution.solution)
+        t_fom = time.perf_counter() - t0
+
+        def norm_M(v, M):
+            return np.sqrt(float(v @ (M @ v)))
+
+        u_fom      = hf_solution.velocity.dat.data_ro.flatten()
+        u_rom_dofs = solution_rom.velocity.dat.data_ro.flatten()
+        p_fom      = hf_solution.pressure.dat.data_ro.flatten()
+        p_rom_dofs = solution_rom.pressure.dat.data_ro.flatten()
+
+        u_err = norm_M(u_fom - u_rom_dofs, M_u) / norm_M(u_fom, M_u)
+        p_err = norm_M(p_fom - p_rom_dofs, M_p) / norm_M(p_fom, M_p)
+
+        print(f"\n{'='*80}")
+        print(f"LOCAL ROM — {mode_str} solver, {affine_str} convection, K={N_CLUSTERS}")
+        print(f"{'='*80}")
+        print(f"  Re={TEST_RE}, amp={TEST_AMP}")
+        print(f"  Cluster selected: {k}")
+        print(f"  ROM modes:  {operators[k].n_velocity_modes} vel × {operators[k].n_pressure_modes} pres")
+        print(f"  Affine convection: {operators[k].has_affine_convection}")
+        if USE_DEIM:
+            print(f"  DEIM: m_F={deim_ops_k.m_F}, m_J={deim_ops_k.m_J}")
+        print(f"  Converged: {solution.converged} ({solution.iterations} iterations)")
+        print(f"  Velocity error ({INNER_PRODUCT_TYPE}): {u_err*100:.4f}%")
+        print(f"  Pressure error (L2):                   {p_err*100:.4f}%")
+        print(f"  ROM time:  {t_rom:.3f}s")
+        print(f"  FOM time:  {t_fom:.3f}s")
+        print(f"  Speedup:   {t_fom/t_rom:.1f}x")
+        print(f"{'='*80}")
     # -------------------------------------------------------------------------
-    print("\n--- Step 7: FOM comparison ---")
-    t0 = time.perf_counter()
-    hf_solution = solve_steady_navier_stokes(problem, initial_solution.solution)
-    t_fom = time.perf_counter() - t0
+    print("\n--- Precompute fast cluster selection ---")
+    precompute_fast_selection(clustering, operators, M_u)
+    print("\n--- Precompute change-of-basis ---")
+    precompute_change_of_basis(clustering, operators, M_u, M_p)
+    # -------------------------------------------------------------------------
+    if RUN_SWEEP:
+        print(f"\n--- Step 8: Parameter sweep ---")
+        path = build_snake_path(RE_VALUES, AMP_VALUES)
+        print(f"  Grid: {len(RE_VALUES)} Re × {len(AMP_VALUES)} amp = {len(path)} points")
+        print(f"  FOM comparison: every {FOM_EVERY} points" if FOM_EVERY > 0 else "  FOM comparison: off")
 
-    def norm_M(v, M):
-        return np.sqrt(float(v @ (M @ v)))
+        results = run_sweep(
+            path, clustering, operators, deim_ops_dict,
+            problem, initial_solution, M_u, M_p,
+            use_deim=USE_DEIM,
+            fom_every=FOM_EVERY,
+        )
 
-    u_fom      = hf_solution.velocity.dat.data_ro.flatten()
-    u_rom_dofs = solution_rom.velocity.dat.data_ro.flatten()
-    p_fom      = hf_solution.pressure.dat.data_ro.flatten()
-    p_rom_dofs = solution_rom.pressure.dat.data_ro.flatten()
+        n_conv = sum(1 for r in results if r['converged'])
+        print(f"\n  Converged: {n_conv}/{len(results)}")
+        print(f"  Total ROM time: {sum(r['t_rom'] for r in results):.1f}s")
 
-    u_err = norm_M(u_fom - u_rom_dofs, M_u) / norm_M(u_fom, M_u)
-    p_err = norm_M(p_fom - p_rom_dofs, M_p) / norm_M(p_fom, M_p)
+        if FOM_EVERY > 0:
+            fom_pts = [r for r in results if 'u_err' in r]
+            if fom_pts:
+                u_errs = [r['u_err'] for r in fom_pts]
+                print(f"  Velocity error: mean={np.mean(u_errs)*100:.3f}%, max={np.max(u_errs)*100:.3f}%")
 
-    print(f"\n{'='*80}")
-    print(f"LOCAL ROM — {mode_str} solver, {affine_str} convection, K={N_CLUSTERS}")
-    print(f"{'='*80}")
-    print(f"  Re={TEST_RE}, amp={TEST_AMP}")
-    print(f"  Cluster selected: {k}")
-    print(f"  ROM modes:  {operators[k].n_velocity_modes} vel × {operators[k].n_pressure_modes} pres")
-    print(f"  Affine convection: {operators[k].has_affine_convection}")
-    if USE_DEIM:
-        print(f"  DEIM: m_F={deim_ops_k.m_F}, m_J={deim_ops_k.m_J}")
-    print(f"  Converged: {solution.converged} ({solution.iterations} iterations)")
-    print(f"  Velocity error ({INNER_PRODUCT_TYPE}): {u_err*100:.4f}%")
-    print(f"  Pressure error (L2):                   {p_err*100:.4f}%")
-    print(f"  ROM time:  {t_rom:.3f}s")
-    print(f"  FOM time:  {t_fom:.3f}s")
-    print(f"  Speedup:   {t_fom/t_rom:.1f}x")
-    print(f"{'='*80}")
+        save_path = os.path.join(LOCAL_ROM_DIR, "sweep_results.csv")
+        save_sweep_results(results, save_path)
 
 
 if __name__ == '__main__':

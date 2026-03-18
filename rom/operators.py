@@ -213,7 +213,7 @@ def build_reduced_operators(
     Z_p = basis.pressure_modes
 
     if basis.supremizer_modes is not None:
-        print("\n  Computing supremizer enrichment...")
+        print("\n  Enriching velocity basis with supremizers...")
 
         # Compute supremizers from pressure modes
         # Orthonormalize against velocity modes
