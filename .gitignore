@@ -37,3 +37,6 @@ archive/
 
 # Figures
 *.png
+trials.py
+new_trial.py
+eigen_testing.py
