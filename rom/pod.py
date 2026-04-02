@@ -33,6 +33,7 @@ from helper_functions import dofs_to_function, dofs_to_functions, functions_to_d
 __all__ = [
     # Inner products
     'assemble_inner_product_matrix',
+    'assemble_inner_product',
     # Snapshot processing
     'homogenize_snapshots',
     # POD computation
@@ -86,7 +87,12 @@ def assemble_inner_product(
     if bc==False:
         return assemble(form, mat_type='aij')
     else:
-        return assemble(form, mat_type='aij', bcs = bcs)
+        M_petsc = assemble(form, mat_type='aij', bcs = bcs).M.handle
+        indptr, indices, data = M_petsc.getValuesCSR()
+
+        return csr_matrix((data, indices, indptr), shape=M_petsc.getSize())
+
+
 
 
 def assemble_inner_product_matrix(

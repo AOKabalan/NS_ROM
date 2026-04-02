@@ -41,6 +41,7 @@ from .data_structures import (
 from .pod import (
     # Inner products
     assemble_inner_product_matrix,
+    assemble_inner_product,
     # Snapshot processing
     homogenize_snapshots,
     # POD
@@ -108,6 +109,7 @@ __all__ = [
     # POD
     # ==========================================================================
     'assemble_inner_product_matrix',
+    'assemble_inner_product',
     'homogenize_snapshots',
     'build_correlation_matrix',
     'solve_eigenvalue_problem',
