@@ -15,6 +15,7 @@ two_param_snapshots_rom_deim_dofs/
 local_rom/
 pod_basis_two_param/
 operators_two_param/
+multi_param_multi_branch/
 newlygenerated_high*
 deim_basis.npz
 deim_ops.npz
