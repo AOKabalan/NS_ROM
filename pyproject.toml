@@ -1,0 +1,25 @@
+[project]
+name = "nsrom"
+version = "0.1.0"
+description = "Local reduced-order modeling framework for bifurcating flows on Firedrake"
+requires-python = ">=3.10"
+
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "petsc4py",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ipython",
+]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools.packages.find]
+include = ["nsrom*"]
