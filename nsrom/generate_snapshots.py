@@ -15,7 +15,7 @@ from .snapshot_collection import *
 from .lifting_functions import load_lifting_functions
 from .helper_functions import dofs_to_functions
 
-from rom import (
+from .rom import (
     compute_pod_basis,
     save_pod_basis,
     load_pod_basis,
@@ -285,7 +285,7 @@ def collect_rom_snapshots_for_deim_1p(
     pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
 
     # Project to ROM coefficients
-    from rom import project_to_rom_coefficients, assemble_inner_product_matrix
+    from .rom import project_to_rom_coefficients, assemble_inner_product_matrix
     M_u = assemble_inner_product_matrix(problem.velocity_space, 'H1_semi')
     M_p = assemble_inner_product_matrix(problem.pressure_space, 'L2')
 
@@ -389,7 +389,7 @@ def collect_rom_snapshots_for_deim_2p(
     velocity_dofs = initial_solution.velocity.dat.data_ro.flatten()
     pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
 
-    from rom import project_to_rom_coefficients, assemble_inner_product_matrix
+    from .rom import project_to_rom_coefficients, assemble_inner_product_matrix
     M_u = assemble_inner_product_matrix(problem.velocity_space, 'H1_semi')
     M_p = assemble_inner_product_matrix(problem.pressure_space, 'L2')
 

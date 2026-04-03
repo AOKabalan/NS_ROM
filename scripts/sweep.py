@@ -4,7 +4,7 @@ import numpy as np
 import time
 
 from nsrom.navier_stokes import solve_steady_navier_stokes, compute_forces
-from rom import solve_rom, reconstruct_solution, project_to_rom_coefficients, SubMeshDEIM
+from nsrom.rom import solve_rom, reconstruct_solution, project_to_rom_coefficients, SubMeshDEIM
 from nsrom.cluster_building import select_cluster, select_cluster_reduced, apply_change_of_basis
 
 

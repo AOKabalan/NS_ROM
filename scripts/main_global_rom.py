@@ -29,7 +29,7 @@ from nsrom.snapshot_collection import load_snapshot_dofs
 from nsrom.lifting_functions import load_lifting_functions
 from nsrom.helper_functions import dofs_to_functions
 
-from rom import (
+from nsrom.rom import (
     # POD
     compute_pod_basis,
     save_pod_basis,

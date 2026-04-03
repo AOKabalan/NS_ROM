@@ -47,7 +47,7 @@ def strategy_symmetry_classifier(snapshots, parameters, M_u,
     After the hard branch split, sub-clustering within each branch
     captures the parametric variation along each branch.
     """
-    from rom import compute_pod_modes, project_to_basis
+    from .rom import compute_pod_modes, project_to_basis
 
     print(f"  [strategy] symmetry_classifier  (rank={pod_rank})")
 
@@ -192,7 +192,7 @@ def strategy_spectral_manifold(snapshots, parameters, M_u,
     so it captures both the local manifold structure and the
     energy-norm geometry.
     """
-    from rom import compute_pod_modes, project_to_basis
+    from .rom import compute_pod_modes, project_to_basis
 
     print(f"  [strategy] spectral_manifold  "
           f"(rank={pod_rank}, knn={n_neighbors})")
@@ -295,7 +295,7 @@ def strategy_lift_based(snapshots, parameters, M_u,
         print(f"    Cluster {c}: {np.sum(mask)} snapshots, "
               f"mean C_L = {lift_coefficients[mask].mean():.4f}")
 
-    from rom import compute_pod_modes, project_to_basis
+    from .rom import compute_pod_modes, project_to_basis
     modes, eigenvalues = compute_pod_modes(snapshots, M_u, n_modes=10)
     A = project_to_basis(snapshots, modes, M_u)
     unique = np.unique(labels)
@@ -328,7 +328,7 @@ def strategy_gap_weighted(snapshots, parameters, M_u,
         w_i = 1 / (min(|λ_i - λ_{i-1}|, |λ_i - λ_{i+1}|) + eps)
         (normalised to unit mean)
     """
-    from rom import compute_pod_modes, project_to_basis
+    from .rom import compute_pod_modes, project_to_basis
     from .cluster_building import cluster_kmeans
 
     print(f"  [strategy] gap_weighted  (rank={pod_rank})")
@@ -382,7 +382,7 @@ def strategy_local_pca(snapshots, parameters, M_u,
     This is inspired by the manifold learning literature on
     detecting branching structures.
     """
-    from rom import compute_pod_modes, project_to_basis
+    from .rom import compute_pod_modes, project_to_basis
     from sklearn.neighbors import NearestNeighbors
 
     print(f"  [strategy] local_pca  "

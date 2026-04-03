@@ -201,7 +201,7 @@ def compare_matrices(matrices_dict, full_spectrum=False, tol=1e-12):
 if __name__ == "__main__":
     # Example with your setup:
     #
-    # from rom import assemble_inner_product_matrix
+    # from nsrom.rom import assemble_inner_product_matrix
     # from nsrom.navier_stokes import setup_navier_stokes_problem
     #
     # problem = setup_navier_stokes_problem(...)

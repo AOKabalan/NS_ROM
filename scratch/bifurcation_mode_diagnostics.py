@@ -50,7 +50,7 @@ from nsrom.navier_stokes import (
 from nsrom.snapshot_collection import load_snapshot_dofs
 from nsrom.lifting_functions import load_lifting_functions
 
-from rom import (
+from nsrom.rom import (
     assemble_inner_product_matrix,
     homogenize_snapshots,
     compute_pod_modes,
