@@ -516,9 +516,9 @@ def build_deim_approximation(
 
 def main():
     """Standalone test of DEIM functionality."""
-    from Navier_Stokes import setup_navier_stokes_problem, load_solution
-    from snapshot_collection import load_snapshot_dofs
-    from helper_functions import dofs_to_functions
+    from .navier_stokes import setup_navier_stokes_problem, load_solution
+    from .snapshot_collection import load_snapshot_dofs
+    from .helper_functions import dofs_to_functions
 
     # Setup
     problem = setup_navier_stokes_problem(

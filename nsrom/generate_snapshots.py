@@ -6,14 +6,14 @@ Supports both single-parameter (Reynolds only) and two-parameter (Reynolds + Amp
 import numpy as np
 import os
 
-from Navier_Stokes import (
+from .navier_stokes import (
     setup_navier_stokes_problem,
     solve_steady_navier_stokes,
     load_solution
 )
-from snapshot_collection import *
-from lifting_functions import load_lifting_functions
-from helper_functions import dofs_to_functions
+from .snapshot_collection import *
+from .lifting_functions import load_lifting_functions
+from .helper_functions import dofs_to_functions
 
 from rom import (
     compute_pod_basis,
@@ -324,7 +324,7 @@ def collect_rom_snapshots_for_deim_1p(
         solutions.append(sol)
         parameters.append(np.array([re, amplitude]))
 
-        from Navier_Stokes import compute_forces
+        from .navier_stokes import compute_forces
         try:
             forces = compute_forces(u_rom, p_rom, problem)
             lift_coefficients.append(forces.lift)
@@ -429,7 +429,7 @@ def collect_rom_snapshots_for_deim_2p(
             solutions.append(sol)
             parameters.append(np.array([re, amp]))
 
-            from Navier_Stokes import compute_forces
+            from .navier_stokes import compute_forces
             try:
                 forces = compute_forces(u_rom, p_rom, problem)
                 lift_coefficients.append(forces.lift)

@@ -202,7 +202,7 @@ if __name__ == "__main__":
     # Example with your setup:
     #
     # from rom import assemble_inner_product_matrix
-    # from Navier_Stokes import setup_navier_stokes_problem
+    # from nsrom.navier_stokes import setup_navier_stokes_problem
     #
     # problem = setup_navier_stokes_problem(...)
     # V = problem.velocity_space

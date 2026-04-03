@@ -15,7 +15,7 @@ import os
 import json
 import csv
 
-from Navier_Stokes import (
+from .navier_stokes import (
     NavierStokesProblem,
     NavierStokesSolution,
     setup_navier_stokes_problem,

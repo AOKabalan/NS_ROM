@@ -329,7 +329,7 @@ def strategy_gap_weighted(snapshots, parameters, M_u,
         (normalised to unit mean)
     """
     from rom import compute_pod_modes, project_to_basis
-    from cluster_building import cluster_kmeans
+    from .cluster_building import cluster_kmeans
 
     print(f"  [strategy] gap_weighted  (rank={pod_rank})")
 

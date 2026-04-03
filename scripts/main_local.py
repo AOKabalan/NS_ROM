@@ -22,16 +22,16 @@ import os
 import time
 
 from firedrake import Function
-from Navier_Stokes import (
+from nsrom.navier_stokes import (
     NavierStokesSolution,
     setup_navier_stokes_problem,
     solve_steady_navier_stokes,
     load_solution,
     compute_forces,
 )
-from snapshot_collection import load_snapshot_dofs
-from lifting_functions import load_lifting_functions
-from helper_functions import dofs_to_functions
+from nsrom.snapshot_collection import load_snapshot_dofs
+from nsrom.lifting_functions import load_lifting_functions
+from nsrom.helper_functions import dofs_to_functions
 
 from rom import (
     compute_pod_basis,
@@ -48,7 +48,7 @@ from rom import (
     SubMeshDEIM,
 )
 
-from cluster_building import (
+from nsrom.cluster_building import (
     apply_energy_transform,
     cluster_kmeans,
     build_clustering_result,
@@ -60,10 +60,10 @@ from cluster_building import (
     precompute_change_of_basis,
 )
 
-from deim import compute_and_save_basis
-from online_operators import DEIMOnlineOperators, build_deim_online_operators
+from nsrom.deim import compute_and_save_basis
+from nsrom.online_operators import DEIMOnlineOperators, build_deim_online_operators
 
-from deim_helpers import needs_basis_recompute, needs_ops_rebuild, deim_debug
+from nsrom.deim_helpers import needs_basis_recompute, needs_ops_rebuild, deim_debug
 from sweep import build_snake_path, run_sweep, save_sweep_results
 
 # =============================================================================

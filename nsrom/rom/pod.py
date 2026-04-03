@@ -28,7 +28,7 @@ from firedrake import (
 )
 
 from .data_structures import PODBasis
-from helper_functions import dofs_to_function, dofs_to_functions, functions_to_dofs
+from ..helper_functions import dofs_to_function, dofs_to_functions, functions_to_dofs
 
 __all__ = [
     # Inner products

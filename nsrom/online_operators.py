@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from deim import deim_algorithm, load_basis
+from .deim import deim_algorithm, load_basis
 
 
 def csr_flat_to_coords(flat_indices, indptr, col_indices):

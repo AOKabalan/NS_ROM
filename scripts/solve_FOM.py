@@ -1,7 +1,7 @@
 import numpy as np
 import time
 
-from Navier_Stokes import (
+from nsrom.navier_stokes import (
     setup_navier_stokes_problem,
     solve_steady_navier_stokes,
     load_solution,

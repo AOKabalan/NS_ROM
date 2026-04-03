@@ -42,13 +42,13 @@ from matplotlib import rcParams
 
 
 
-from Navier_Stokes import (
+from nsrom.navier_stokes import (
     setup_navier_stokes_problem,
     NavierStokesSolution,
     compute_forces,
 )
-from snapshot_collection import load_snapshot_dofs
-from lifting_functions import load_lifting_functions
+from nsrom.snapshot_collection import load_snapshot_dofs
+from nsrom.lifting_functions import load_lifting_functions
 
 from rom import (
     assemble_inner_product_matrix,
@@ -56,7 +56,7 @@ from rom import (
     compute_pod_modes,
     project_to_basis,
 )
-from cluster_building import cluster_kmeans
+from nsrom.cluster_building import cluster_kmeans
 from firedrake import Function
 
 # =============================================================================

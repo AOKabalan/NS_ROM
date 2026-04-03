@@ -22,7 +22,7 @@ from firedrake import (
     Constant, UnitIntervalMesh, VectorFunctionSpace,
     NonlinearVariationalProblem, NonlinearVariationalSolver,
 )
-from Navier_Stokes import NavierStokesSolution
+from ..navier_stokes import NavierStokesSolution
 from .data_structures import ReducedOperators, ROMSolution
 from .rom_callbacks import make_callbacks
 

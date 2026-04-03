@@ -10,8 +10,7 @@ from firedrake import (
     SpatialCoordinate, as_vector, sin, cos, atan2, norm
 )
 
-# Import from Navier_Stokes module
-from Navier_Stokes import (
+from .navier_stokes import (
     NavierStokesProblem,
     NavierStokesSolution,
     setup_navier_stokes_problem,

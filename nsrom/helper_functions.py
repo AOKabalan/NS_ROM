@@ -3,7 +3,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 import os
-from Navier_Stokes import save_to_paraview, load_solution, setup_navier_stokes_problem, save_solution,NavierStokesSolution
+from .navier_stokes import save_to_paraview, load_solution, setup_navier_stokes_problem, save_solution,NavierStokesSolution
 
 def load_save_paraview(
     load_dir: str,

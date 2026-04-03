@@ -1,8 +1,8 @@
 # setup_investigation.py
 import numpy as np
-from Navier_Stokes import setup_navier_stokes_problem
-from snapshot_collection import load_snapshot_dofs
-from lifting_functions import load_lifting_functions
+from nsrom.navier_stokes import setup_navier_stokes_problem
+from nsrom.snapshot_collection import load_snapshot_dofs
+from nsrom.lifting_functions import load_lifting_functions
 from rom import assemble_inner_product_matrix, homogenize_snapshots, compute_pod_modes, project_to_basis
 
 SNAPSHOT_DIR   = "multi_param_multi_branch"

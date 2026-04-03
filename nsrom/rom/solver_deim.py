@@ -5,7 +5,7 @@ import scipy.sparse as sp
 from firedrake import *
 import scipy.sparse as sp
 from .data_structures import ReducedOperators, ROMSolution
-from online_operators import DEIMOnlineOperators  # Changed import
+from ..online_operators import DEIMOnlineOperators  # Changed import
 import traceback
 __all__ = [
     'setup_rom_solver_deim',

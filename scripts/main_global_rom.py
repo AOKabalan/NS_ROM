@@ -20,14 +20,14 @@ from firedrake import norm, Function, TestFunction, TrialFunction, inner, grad, 
 import scipy.sparse as sp
 import time
 
-from Navier_Stokes import (
+from nsrom.navier_stokes import (
     setup_navier_stokes_problem,
     solve_steady_navier_stokes,
     load_solution,
 )
-from snapshot_collection import load_snapshot_dofs
-from lifting_functions import load_lifting_functions
-from helper_functions import dofs_to_functions
+from nsrom.snapshot_collection import load_snapshot_dofs
+from nsrom.lifting_functions import load_lifting_functions
+from nsrom.helper_functions import dofs_to_functions
 
 from rom import (
     # POD
@@ -46,8 +46,8 @@ from rom import (
     SubMeshDEIM,
 )
 
-from deim import compute_and_save_basis, load_basis_metadata
-from online_operators import (
+from nsrom.deim import compute_and_save_basis, load_basis_metadata
+from nsrom.online_operators import (
     DEIMOnlineOperators,
     build_deim_online_operators,
     load_ops_metadata,

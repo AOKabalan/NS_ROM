@@ -5,8 +5,8 @@ import os
 import scipy.sparse as sp
 
 from firedrake import TestFunction, TrialFunction, inner, grad, dx, assemble
-from deim import load_basis_metadata
-from online_operators import load_ops_metadata
+from .deim import load_basis_metadata
+from .online_operators import load_ops_metadata
 
 
 def needs_basis_recompute(basis_path, snapshot_dir, n_modes_F, n_modes_J):
