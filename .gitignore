@@ -19,6 +19,7 @@ multi_param_multi_branch/
 newlygenerated_high*
 deim_basis.npz
 deim_ops.npz
+investigations/
 
 # Firedrake outputs
 *.h5
