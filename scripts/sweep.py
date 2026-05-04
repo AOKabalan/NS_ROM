@@ -5,7 +5,7 @@ import time
 
 from nsrom.navier_stokes import solve_steady_navier_stokes, compute_forces
 from nsrom.rom import solve_rom, reconstruct_solution, project_to_rom_coefficients, SubMeshDEIM
-from nsrom.cluster_building import select_cluster, select_cluster_reduced, apply_change_of_basis
+from nsrom.local_rom import select_cluster, select_cluster_reduced, apply_change_of_basis
 
 
 def build_snake_path(Re_values, amp_values):
