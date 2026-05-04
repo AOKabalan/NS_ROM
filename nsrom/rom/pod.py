@@ -348,7 +348,7 @@ def truncate_modes(
 
 def compute_pod_modes(
     snapshots: np.ndarray,
-    inner_product: csr_matrix,
+    inner_product: csr_matrix = None,
     n_modes: int = None,
     energy_threshold: float = None
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -726,27 +726,20 @@ def compute_pod_basis(
 # =============================================================================
 # UTILITIES
 # =============================================================================
-
 def project_to_basis(
     snapshots: np.ndarray,
     modes: np.ndarray,
-    inner_product: csr_matrix
+    inner_product: csr_matrix = None,
 ) -> np.ndarray:
     """
     Project snapshots onto POD basis.
 
-    coeffs = modes^T @ M @ snapshots
-
-    Args:
-        snapshots: (n_dofs, n_snapshots) snapshots to project
-        modes: (n_dofs, n_modes) POD basis
-        inner_product: (n_dofs, n_dofs) inner product matrix
-
-    Returns:
-        (n_modes, n_snapshots) projection coefficients
+    With inner product M:  coeffs = modes^T @ M @ snapshots
+    Without (Euclidean):   coeffs = modes^T @ snapshots
     """
-    return modes.T @ (inner_product @ snapshots)
-
+    if inner_product is not None:
+        return modes.T @ (inner_product @ snapshots)
+    return modes.T @ snapshots
 
 def reconstruct_from_basis(
     coeffs: np.ndarray,
