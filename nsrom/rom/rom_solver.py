@@ -28,6 +28,7 @@ from .rom_callbacks import make_callbacks
 
 __all__ = [
     'solve_rom',
+    'solve_rom_with_internals',
     'solve_rom_parameter_sweep',
     'reconstruct_velocity',
     'reconstruct_pressure',
@@ -155,7 +156,11 @@ def _setup_rom_solver(
         'amp': amp,
         # Tracking
         'iteration_count': 0,
-    }
+        # NEW for bifurcation indicator:
+        'rom_mesh': rom_mesh,
+        'W_rom': W_rom,
+        'B_const': B_const,
+        }
 
     # ---- Create callbacks ----
     res_cb, jac_cb = make_callbacks(callback_data)
@@ -368,7 +373,89 @@ def solve_rom(
 
     return solution
 
+# rom solver but with easier interface for bifurcation indicator
+def solve_rom_with_internals(
+    operators: ReducedOperators,
+    nu: float,
+    amp: float,
+    problem,
+    deim_ops=None,
+    submesh_deim=None,
+    u_initial_guess: np.ndarray = None,
+    p_initial_guess: np.ndarray = None,
+    solver_parameters: dict = None,
+):
+    """
+    Like solve_rom, but also returns the Firedrake `w_rom` Function for
+    post-solve operations on the converged state (e.g. bifurcation indicator).
 
+    Returns
+    -------
+    solution      : ROMSolution
+    w_rom         : Function on W_rom
+    callback_data : dict with operators, Constants, function spaces, etc.
+    """
+    print("=" * 60)
+    print("SOLVING ROM (with internals)")
+    print("=" * 60)
+    print(f"  nu = {nu} (Re = {1/nu:.1f})")
+    print(f"  amp = {amp}")
+
+    solver, w_rom, callback_data = _setup_rom_solver(
+        operators, nu, amp, problem, deim_ops, solver_parameters,
+        submesh_deim=submesh_deim,
+    )
+
+    u_sub, p_sub = w_rom.subfunctions
+    if u_initial_guess is not None and p_initial_guess is not None:
+        u_sub.dat.data[:] = u_initial_guess.reshape(u_sub.dat.data.shape)
+        p_sub.dat.data[:] = p_initial_guess.reshape(p_sub.dat.data.shape)
+        print(f"  Using initial guess: ||alpha_0|| = "
+              f"{np.linalg.norm(u_initial_guess):.6e}")
+
+    converged = True
+    try:
+        solver.solve()
+        iterations = callback_data['iteration_count']
+        print(f"\n  ✓ Converged in {iterations} iterations")
+    except Exception as e:
+        converged = False
+        iterations = callback_data['iteration_count']
+        print(f"\n  ✗ Solver failed after {iterations} iterations: {e}")
+        import traceback
+        traceback.print_exc()
+
+    velocity_coeffs = u_sub.dat.data_ro.flatten().copy()
+    pressure_coeffs = p_sub.dat.data_ro.flatten().copy()
+
+    thetas = operators._default_thetas(amp)
+    u_lift = np.einsum('i,ij->j', thetas, operators.lifting_dofs)
+    velocity_dofs = u_lift + operators.Z_u @ velocity_coeffs
+    pressure_dofs = operators.Z_p @ pressure_coeffs
+
+    solution = ROMSolution(
+        velocity_coeffs=velocity_coeffs,
+        pressure_coeffs=pressure_coeffs,
+        reynolds=1.0/nu,
+        amplitude=amp,
+        velocity_dofs=velocity_dofs,
+        pressure_dofs=pressure_dofs,
+        iterations=iterations,
+        converged=converged,
+        metadata={
+            'nu': nu,
+            'n_velocity_modes': operators.n_velocity_modes,
+            'n_pressure_modes': operators.n_pressure_modes,
+            'mode': 'deim' if deim_ops is not None else 'exact',
+            'quadratic_only': operators.has_affine_convection,
+        },
+    )
+
+    print(f"  ||alpha|| = {np.linalg.norm(velocity_coeffs):.6e}")
+    print(f"  ||beta||  = {np.linalg.norm(pressure_coeffs):.6e}")
+    print("")
+
+    return solution, w_rom, callback_data
 # =============================================================================
 # PARAMETER SWEEP
 # =============================================================================
