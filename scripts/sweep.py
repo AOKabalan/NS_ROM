@@ -56,7 +56,7 @@ def run_sweep(path, clustering, operators, deim_ops_dict,
         if prev_u_coeffs is not None and clustering.fast_selection is not None:
             k = select_cluster_reduced(clustering, prev_u_coeffs, prev_k)
         else:
-            k = select_cluster(clustering, Re, amp)
+            k,_ = select_cluster(clustering, Re, amp)
         cluster_switched = (k != prev_k)
 
         # --- Initial guess ---
