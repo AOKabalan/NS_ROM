@@ -147,7 +147,11 @@ def save_numpy_h5_paraview(
         print(f"Solution saved as h5 and ParaView: {O_filename}")
 
 
-
+def modes_for_tolerance(eigenvalues, tol, max_modes):
+    total = np.sum(eigenvalues)
+    cumulative = np.cumsum(eigenvalues) / total
+    n = int(np.searchsorted(cumulative, 1.0 - tol) + 1)
+    return min(n, max_modes)
 
 
 if __name__ == "__main__":
