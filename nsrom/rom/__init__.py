@@ -71,6 +71,7 @@ from .operators import (
 # Unified solver
 from .rom_solver import (
     solve_rom,
+    solve_rom_with_internals,
     solve_rom_parameter_sweep,
     reconstruct_solution,
     reconstruct_velocity,
@@ -135,6 +136,7 @@ __all__ = [
     # SOLVER (unified — exact or DEIM)
     # ==========================================================================
     'solve_rom',
+    'solve_rom_with_internals',
     'solve_rom_parameter_sweep',
     'reconstruct_solution',
     'reconstruct_velocity',
