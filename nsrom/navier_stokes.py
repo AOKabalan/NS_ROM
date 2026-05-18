@@ -28,6 +28,8 @@ class NavierStokesSolution:
     pressure: Function
     reynolds: float
     amplitude: float
+    converged: Optional[bool] = None
+    num_iterations: Optional[int] = None
 
 @dataclass
 class ForceCoefficients:
@@ -261,8 +263,13 @@ def solve_steady_navier_stokes(
         solver.solve()
     except ConvergenceError as e:
         reason = solver.snes.getConvergedReason()
-        print(f"Solver diverged with reason {reason}: {e}")
-
+        num_iterations = solver.snes.getIterationNumber()
+        converged = int(reason) > 0
+        print(f"Solver diverged with reason {reason} after {num_iterations} iterations: {e}")
+    else:
+        reason = solver.snes.getConvergedReason()
+        num_iterations = solver.snes.getIterationNumber()
+        converged = int(reason) > 0
     # Extract velocity and pressure
     u, p = solution.subfunctions
 
@@ -271,8 +278,11 @@ def solve_steady_navier_stokes(
         velocity=u,
         pressure=p,
         reynolds=float(problem.reynolds),
-        amplitude=float(problem.amplitude)
+        amplitude=float(problem.amplitude),
+        converged=converged,
+        num_iterations=num_iterations
     )
+
 
 def solve_with_continuation(
     problem: NavierStokesProblem,
