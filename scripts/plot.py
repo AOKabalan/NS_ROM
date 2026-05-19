@@ -1,86 +1,65 @@
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401  (registers 3d projection)
 import numpy as np
 
-def plot_lift_3d(parameters, lift_coefficients, labels, figsize=(14, 10), cmap='tab10'):
-    """
-    Plot lift coefficients in 3D scatter plot.
 
-    Args:
-        parameters: (N, 2) array with [Re, amp] pairs
-        lift_coefficients: (N,) array of lift values
-        labels: (N,) array of cluster labels for color coding
-        figsize: tuple for figure size (default: (14, 10))
-        cmap: colormap name (default: 'tab10' works well for discrete clusters)
+def plot_lift_3d(
+    parameters,
+    lift_coefficients,
+    labels,
+    figsize=(14, 10),
+    cmap='tab10',
+    legend=True,
+    elev=20,
+    azim=45,
+    title='Lift Coefficients vs Re and Amplitude',
+):
     """
-    fig = plt.figure(figsize=figsize)
-    ax = fig.add_subplot(111, projection='3d')
+    3D scatter of lift coefficients over (Re, amp), colored by cluster.
 
-    # Extract Re and amp from parameters
-    Re = parameters[:, 0]
+    Parameters
+    ----------
+    parameters        : (N, 2) array of [Re, amp]
+    lift_coefficients : (N,) array
+    labels            : (N,) cluster labels (integer)
+    legend            : if True, draw a per-cluster legend; if False, draw a
+                        colorbar (better when there are many clusters)
+    elev, azim        : initial 3D view angles
+    title             : plot title
+    """
+    Re  = parameters[:, 0]
     amp = parameters[:, 1]
-
-    # Create scatter plot with color coding by labels
-    scatter = ax.scatter(Re, amp, lift_coefficients,
-                        c=labels, cmap=cmap,
-                        s=60, alpha=0.7, edgecolors='k', linewidth=0.3)
-
-    # Labels and title
-    ax.set_xlabel('Reynolds Number (Re)', fontsize=12, labelpad=10)
-    ax.set_ylabel('Amplitude (amp)', fontsize=12, labelpad=10)
-    ax.set_zlabel('Lift Coefficient', fontsize=12, labelpad=10)
-    ax.set_title('Lift Coefficients vs Re and Amplitude\n(Color-coded by Cluster)',
-                 fontsize=14, pad=20)
-
-    # Add colorbar
-    cbar = plt.colorbar(scatter, ax=ax, pad=0.1, shrink=0.8)
-    cbar.set_label('Cluster Label', fontsize=11)
-
-    # Set viewing angle for better visualization
-    ax.view_init(elev=20, azim=45)
-
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_lift_3d_interactive(parameters, lift_coefficients, labels, figsize=(14, 10)):
-    """
-    Enhanced version with rotation capability.
-    Use mouse to rotate the plot.
-    """
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
-
-    fig = plt.figure(figsize=figsize)
-    ax = fig.add_subplot(111, projection='3d')
-
-    Re = parameters[:, 0]
-    amp = parameters[:, 1]
-
-    # Use different colors for each cluster
     unique_labels = np.unique(labels)
-    colors = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))
 
-    for label_idx, label in enumerate(unique_labels):
-        mask = labels == label
-        ax.scatter(Re[mask], amp[mask], lift_coefficients[mask],
-                  label=f'Cluster {label}',
-                  s=60, alpha=0.7, edgecolors='k', linewidth=0.3,
-                  color=colors[label_idx])
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, projection='3d')
+
+    if legend:
+        colors = plt.get_cmap(cmap)(np.linspace(0, 1, len(unique_labels)))
+        for label, color in zip(unique_labels, colors):
+            mask = labels == label
+            ax.scatter(
+                Re[mask], amp[mask], lift_coefficients[mask],
+                label=f'Cluster {label}',
+                color=color,
+                s=60, alpha=0.7, edgecolors='k', linewidth=0.3,
+            )
+        ax.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=10)
+    else:
+        scatter = ax.scatter(
+            Re, amp, lift_coefficients,
+            c=labels, cmap=cmap,
+            s=60, alpha=0.7, edgecolors='k', linewidth=0.3,
+        )
+        cbar = plt.colorbar(scatter, ax=ax, pad=0.1, shrink=0.8)
+        cbar.set_label('Cluster Label', fontsize=11)
 
     ax.set_xlabel('Reynolds Number (Re)', fontsize=12, labelpad=10)
-    ax.set_ylabel('Amplitude (amp)', fontsize=12, labelpad=10)
-    ax.set_zlabel('Lift Coefficient', fontsize=12, labelpad=10)
-    ax.set_title('Lift Coefficients vs Re and Amplitude', fontsize=14, pad=20)
-    ax.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=10)
+    ax.set_ylabel('Amplitude (amp)',     fontsize=12, labelpad=10)
+    ax.set_zlabel('Lift Coefficient',    fontsize=12, labelpad=10)
+    ax.set_title(title, fontsize=14, pad=20)
 
-    ax.view_init(elev=20, azim=45)
+    ax.view_init(elev=elev, azim=azim)
 
     plt.tight_layout()
     plt.show()
-
-
-# Usage example:
-# plot_lift_3d(parameters, lift_coefficients, labels)
-# or for better legend:
-# plot_lift_3d_interactive(parameters, lift_coefficients, labels)
