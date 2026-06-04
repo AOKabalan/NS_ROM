@@ -115,7 +115,8 @@ class SubMeshDEIM:
 
         label_value = 999
         mesh.mark_entities(indicator, label_value)
-        dim = mesh.topological_dimension()
+        # dim = mesh.topological_dimension()
+        dim = mesh.topological_dimension      # property now, not a method
         subm = Submesh(mesh, dim, label_value)
 
         # ---- Function space on submesh (same element) ----
