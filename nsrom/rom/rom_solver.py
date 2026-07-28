@@ -2,21 +2,30 @@
 Unified ROM Solver.
 
 Single entry point for solving the reduced Navier-Stokes system.
-Handles exact and DEIM modes transparently.
+The convection-evaluation strategy is chosen explicitly via `mode`:
+
+    'exact'  : Z_u^T F(u)      -- full-mesh assembly, no hyper-reduction
+    'deim'   : deim(F(u))      -- submesh assembly    (requires deim_ops)
+    'tensor' : tensor(alpha)   -- no assembly, exact  (requires quadratic_only
+                                  and a precomputed operators.tensor_convection)
 
 Usage:
-    # Exact (no DEIM)
-    solution = solve_rom(operators, nu, amp, problem)
+    solution = solve_rom(operators, nu, amp, problem, mode='exact')
 
-    # DEIM
-    solution = solve_rom(operators, nu, amp, problem, deim_ops=my_deim)
+    solution = solve_rom(operators, nu, amp, problem,
+                         mode='deim', deim_ops=my_deim)
+
+    solution = solve_rom(operators, nu, amp, problem, mode='tensor')
 
     # With Firedrake internals (e.g. for bifurcation indicator):
     solution, w_rom, callback_data = solve_rom(
-        operators, nu, amp, problem, return_internals=True,
+        operators, nu, amp, problem, mode='tensor', return_internals=True,
     )
 
-    # Affine convection is auto-detected from operators.has_affine_convection
+`mode` is a required keyword argument: a forgotten mode raises TypeError at
+the call site rather than silently falling back to a different solver path.
+Quadratic-only assembly is still auto-detected from
+operators.has_affine_convection.
 """
 
 import numpy as np
@@ -43,7 +52,11 @@ __all__ = [
     'reconstruct_solution',
     'project_to_rom_coefficients',
     'compute_rom_error',
+    'VALID_MODES',
 ]
+
+
+VALID_MODES = ('exact', 'deim', 'tensor')
 
 
 # Default PETSc SNES parameters for the ROM Newton system.
@@ -73,6 +86,13 @@ _PETSC_OUTPUT_OPTIONS = {
 }
 
 
+_MODE_LABELS = {
+    'exact': 'Exact',
+    'deim': 'DEIM',
+    'tensor': 'Tensor(exact)',
+}
+
+
 def _prepare_solver_parameters(solver_parameters=None, verbose=True):
     """
     Return PETSc solver parameters consistent with the Python verbose flag.
@@ -94,20 +114,50 @@ def _prepare_solver_parameters(solver_parameters=None, verbose=True):
                 params.pop(key, None)
 
     return params
-# _DEFAULT_SOLVER_PARAMETERS = {
-#     'snes_type': 'newtonls',
-#     'snes_linesearch_type': 'bt',
-#     'snes_monitor': None,
-#     'snes_converged_reason': None,
-#     'snes_max_it': 150,
-#     'snes_rtol': 1e-7,
-#     'snes_atol': 1e-8,
-#     'snes_stol': 1e-12,
-#     'ksp_type': 'preonly',
-#     'pc_type': 'lu',
-#     'pc_factor_mat_solver_type': 'mumps',
-#     'mat_type': 'aij',
-# }
+
+
+# =============================================================================
+# MODE RESOLUTION
+# =============================================================================
+
+def _resolve_mode(operators, mode, deim_ops=None):
+    """
+    Validate the requested convection mode and return the handles it needs.
+
+        'exact'  : Z_u^T F(u), full-mesh assembly
+        'deim'   : DEIM/MDEIM, submesh assembly     (requires deim_ops)
+        'tensor' : precomputed exact tensor         (requires quadratic_only)
+
+    Returns
+    -------
+    (mode, tensor_conv, deim_ops)
+        Handles not used by the selected mode are returned as None, so a
+        stray `deim_ops` passed alongside mode='tensor' cannot leak into
+        callback_data or the solution metadata.
+    """
+    if mode not in VALID_MODES:
+        raise ValueError(f"Unknown mode {mode!r}; expected one of {VALID_MODES}.")
+
+    if mode == 'tensor':
+        if not operators.has_affine_convection:
+            raise ValueError(
+                "mode='tensor' requires operators.has_affine_convection=True "
+                "(the tensor represents the pure quadratic term C(u',u') only)."
+            )
+        tensor_conv = getattr(operators, 'tensor_convection', None)
+        if tensor_conv is None:
+            raise ValueError(
+                "mode='tensor' but operators.tensor_convection is None. "
+                "Precompute and attach the convection tensor offline first."
+            )
+        return 'tensor', tensor_conv, None
+
+    if mode == 'deim':
+        if deim_ops is None:
+            raise ValueError("mode='deim' requires deim_ops=...")
+        return 'deim', None, deim_ops
+
+    return 'exact', None, None
 
 
 # =============================================================================
@@ -119,8 +169,9 @@ def _setup_rom_solver(
     nu: float,
     amp: float,
     problem,
+    *,
+    mode: str,
     deim_ops=None,
-    use_tensor=False,
     solver_parameters: dict = None,
     submesh_deim=None,
     verbose: bool = True,
@@ -128,9 +179,9 @@ def _setup_rom_solver(
     """
     Build the ROM NonlinearVariationalSolver (internal).
 
-    Automatically selects the right mode:
-        - Exact vs DEIM (based on deim_ops)
-        - Full vs quadratic-only (based on operators.has_affine_convection)
+    `mode` selects the convection path ('exact' | 'deim' | 'tensor').
+    Quadratic-only assembly is auto-detected from
+    operators.has_affine_convection.
 
     Returns
     -------
@@ -138,32 +189,19 @@ def _setup_rom_solver(
     """
     N_u = operators.n_velocity_modes
     N_p = operators.n_pressure_modes
-
-    use_deim = deim_ops is not None
     quadratic_only = operators.has_affine_convection
     thetas = operators._default_thetas(amp)
-# ---- Exact tensorial convection (optional; supersedes DEIM) ----
-    # tensor_conv = getattr(operators, 'tensor_convection', None)
-    # if tensor_conv is None and deim_ops is not None:
-    #     tensor_conv = getattr(deim_ops, 'tensor_convection', None)
-    # use_tensor = tensor_conv is not None
-    if use_tensor:
-        tensor_conv = getattr(operators, 'tensor_convection', None)
-        if not quadratic_only:
-            raise ValueError(
-                "tensor convection requires operators.has_affine_convection=True"
-            )
-        use_deim = False        # tensor replaces the DEIM convection path
-        submesh_deim = None     # no submesh assembly needed at all
-    elif deim_ops is not None:
-        tensor_conv = getattr(deim_ops, 'tensor_convection', None)
 
-        #-------------------------------------------------------------------------------------
+    mode, tensor_conv, deim_ops = _resolve_mode(operators, mode, deim_ops)
+    use_tensor = (mode == 'tensor')
+    use_deim = (mode == 'deim')
+    if not use_deim:
+        submesh_deim = None      # never assembled in tensor/exact mode
+
     if verbose:
-        mode_str = "Tensor(exact)" if use_tensor else ("DEIM" if use_deim else "Exact")
         conv_str = "quadratic-only" if quadratic_only else "full convection"
         print(f"\n  Setting up ROM solver...")
-        print(f"    Mode: {mode_str}, {conv_str}")
+        print(f"    Mode: {_MODE_LABELS[mode]}, {conv_str}")
         print(f"    N_velocity: {N_u}")
         print(f"    N_pressure: {N_p}")
         print(f"    nu: {nu} (Re = {1/nu:.1f})")
@@ -187,8 +225,7 @@ def _setup_rom_solver(
     # ---- Submesh for DEIM (one-time setup) ----
     if use_deim and submesh_deim is None:
         from .hyper_reduction import SubMeshDEIM
-        V_full = problem.velocity_space
-        submesh_deim = SubMeshDEIM(V_full, deim_ops)
+        submesh_deim = SubMeshDEIM(problem.velocity_space, deim_ops)
     elif use_deim and verbose:
         print(f"    Using pre-built SubMeshDEIM "
               f"({submesh_deim.V_sub.dim()} DOFs)")
@@ -224,14 +261,16 @@ def _setup_rom_solver(
         # Full-order workspace
         'V_full': V_full,
         'u_work': Function(V_full, name="u_work"),
-        # Mode flags
+        # Mode: 'mode' is the resolved public value; use_tensor/use_deim are
+        # derived internals that make_callbacks branches on.
+        'mode': mode,
         'use_tensor': use_tensor,
         'use_deim': use_deim,
         'quadratic_only': quadratic_only,
         # Lifting (for full mode)
         'thetas': list(thetas),
         'lifting_dofs': operators.lifting_dofs,
-        # DEIM (may be None)
+        # Convection handles (only the one for the active mode is non-None)
         'deim_ops': deim_ops,
         'submesh_deim': submesh_deim,
         'tensor_convection': tensor_conv,
@@ -277,9 +316,6 @@ def _setup_rom_solver(
         solver_parameters=solver_parameters,
         verbose=verbose,
     )
-    # # ---- PETSc solver ----
-    # if solver_parameters is None:
-    #     solver_parameters = _DEFAULT_SOLVER_PARAMETERS
 
     rom_problem = NonlinearVariationalProblem(F, w_rom, J=J)
     solver = NonlinearVariationalSolver(
@@ -378,17 +414,23 @@ def _run_solve(solver, callback_data, verbose=True):
         iterations = callback_data['iteration_count']
         # if verbose:
         print(f"##### ✗ SNES did not converge after {iterations} "
-                f"iterations: {e} #####")
+              f"iterations: {e} #####")
         return False, iterations
 
 
 def _extract_solution(
     w_rom, operators, nu, amp, deim_ops,
     converged, iterations, store_full_dofs,
+    *,
+    mode: str,
     verbose=True,
 ) -> ROMSolution:
     """
     Build a ROMSolution from the current state of w_rom.
+
+    `mode` is recorded verbatim in the metadata: it is the mode that was
+    actually used, not one inferred from whatever attributes `operators`
+    happens to carry.
     """
     u_sub, p_sub = w_rom.subfunctions
     velocity_coeffs = u_sub.dat.data_ro.flatten().copy()
@@ -401,16 +443,15 @@ def _extract_solution(
         u_lift = np.einsum('i,ij->j', thetas, operators.lifting_dofs)
         velocity_dofs = u_lift + operators.Z_u @ velocity_coeffs
         pressure_dofs = operators.Z_p @ pressure_coeffs
-    _tc = getattr(operators, 'tensor_convection', None)
-    _mode = 'tensor' if _tc is not None else ('deim' if deim_ops is not None else 'exact')
+
     meta = {
         'nu': nu,
         'n_velocity_modes': operators.n_velocity_modes,
         'n_pressure_modes': operators.n_pressure_modes,
-        'mode': _mode,
+        'mode': mode,
         'quadratic_only': operators.has_affine_convection,
     }
-    if _mode == 'deim':
+    if mode == 'deim':
         meta['deim_modes'] = deim_ops.m_F
         meta['mdeim_modes'] = deim_ops.m_J
 
@@ -444,9 +485,9 @@ def solve_rom(
     amp: float,
     problem,
     *,
+    mode: str,
     deim_ops=None,
     submesh_deim=None,
-    use_tensor= False,
     u_initial_guess: np.ndarray = None,
     p_initial_guess: np.ndarray = None,
     solver_parameters: dict = None,
@@ -457,11 +498,6 @@ def solve_rom(
     """
     Solve the reduced Navier-Stokes system.
 
-    Automatically selects the right mode:
-        - deim_ops=None  → exact projection
-        - deim_ops=...   → DEIM/MDEIM projection (with submesh hyper-reduction)
-        - operators.has_affine_convection → quadratic-only callbacks
-
     Parameters
     ----------
     operators : ReducedOperators
@@ -471,10 +507,17 @@ def solve_rom(
         Amplitude parameter.
     problem : NavierStokesProblem
         Used by callbacks for FOM-side workspace assembly.
+    mode : {'exact', 'deim', 'tensor'}
+        Convection evaluation strategy. Required.
+            'exact'  -- Z_u^T F(u), full-mesh assembly.
+            'deim'   -- DEIM/MDEIM with submesh assembly; requires deim_ops.
+            'tensor' -- precomputed exact tensor; requires
+                        operators.has_affine_convection and
+                        operators.tensor_convection.
     deim_ops : DEIMOnlineOperators or None
-        Pass to enable DEIM/MDEIM hyper-reduction.
+        Required for mode='deim'; ignored otherwise.
     submesh_deim : SubMeshDEIM or None
-        Pre-built SubMeshDEIM. Built internally if None and deim_ops is given.
+        Pre-built SubMeshDEIM for mode='deim'. Built internally if None.
     u_initial_guess, p_initial_guess : np.ndarray or None
         Initial reduced coordinates. Must be provided as a pair or not at all.
     solver_parameters : dict or None
@@ -486,7 +529,7 @@ def solve_rom(
     return_internals : bool, default False
         If True, return (solution, w_rom, callback_data) for post-solve
         operations like the bifurcation indicator.
-    verbose : bool, default True
+    verbose : bool, default False
         Print setup, progress, and norms. Set False inside sweep loops.
 
     Returns
@@ -502,8 +545,12 @@ def solve_rom(
         print(f"  amp = {amp}")
 
     solver, w_rom, callback_data = _setup_rom_solver(
-        operators, nu, amp, problem, deim_ops,use_tensor, solver_parameters,
-        submesh_deim=submesh_deim, verbose=verbose,
+        operators, nu, amp, problem,
+        mode=mode,
+        deim_ops=deim_ops,
+        solver_parameters=solver_parameters,
+        submesh_deim=submesh_deim,
+        verbose=verbose,
     )
 
     _apply_initial_guess(w_rom, u_initial_guess, p_initial_guess, verbose=verbose)
@@ -511,8 +558,9 @@ def solve_rom(
     converged, iterations = _run_solve(solver, callback_data, verbose=verbose)
 
     solution = _extract_solution(
-        w_rom, operators, nu, amp, deim_ops,
+        w_rom, operators, nu, amp, callback_data['deim_ops'],
         converged, iterations, store_full_dofs,
+        mode=callback_data['mode'],
         verbose=verbose,
     )
 
@@ -542,6 +590,8 @@ def solve_rom_with_internals(*args, **kwargs):
 def solve_rom_parameter_sweep(
     operators: ReducedOperators,
     problem,
+    *,
+    mode: str,
     reynolds_values: np.ndarray = None,
     amplitude_values: np.ndarray = None,
     deim_ops=None,
@@ -556,11 +606,16 @@ def solve_rom_parameter_sweep(
 
     The solver is built once; only Constants are updated between solves.
     Continuation carries both velocity and pressure coefficients explicitly.
+
+    See `solve_rom` for the meaning of `mode`.
     """
     if reynolds_values is None:
         reynolds_values = np.array([100.0])
     if amplitude_values is None:
         amplitude_values = np.array([0.0])
+
+    # Resolve up front so the banner reports the mode that will actually run.
+    mode, _, deim_ops = _resolve_mode(operators, mode, deim_ops)
 
     n_total = len(reynolds_values) * len(amplitude_values)
 
@@ -571,7 +626,7 @@ def solve_rom_parameter_sweep(
         print(f"  Reynolds:   {reynolds_values}")
         print(f"  Amplitude:  {amplitude_values}")
         print(f"  Total:      {n_total} solves")
-        print(f"  Mode:       {'DEIM' if deim_ops else 'Exact'}")
+        print(f"  Mode:       {_MODE_LABELS[mode]}")
         print(f"  Quadratic:  {operators.has_affine_convection}")
 
     # Build solver once with the first parameter pair.
@@ -579,8 +634,12 @@ def solve_rom_parameter_sweep(
     amp_0 = amplitude_values[0]
 
     solver, w_rom, callback_data = _setup_rom_solver(
-        operators, nu_0, amp_0, problem, deim_ops,use_tensor, solver_parameters,
-        submesh_deim=submesh_deim, verbose=verbose,
+        operators, nu_0, amp_0, problem,
+        mode=mode,
+        deim_ops=deim_ops,
+        solver_parameters=solver_parameters,
+        submesh_deim=submesh_deim,
+        verbose=verbose,
     )
 
     solutions = []
@@ -610,8 +669,9 @@ def solve_rom_parameter_sweep(
             )
 
             solution = _extract_solution(
-                w_rom, operators, nu, amp, deim_ops,
+                w_rom, operators, nu, amp, callback_data['deim_ops'],
                 converged, iterations, store_full_dofs,
+                mode=mode,
                 verbose=verbose,
             )
             solutions.append(solution)
