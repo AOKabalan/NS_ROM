@@ -79,6 +79,12 @@ class ClusteringResult:
     change_of_basis   : Optional[dict] = field(default=None)
     sigma_min_history : Optional[dict] = field(default=None)
 
+    # pod_whitened artifacts — needed by the whitened cluster selector.
+    # Φ (M_u-orthonormal), per-mode σ, and centroids in raw POD coords.
+    pod_modes   : Optional[np.ndarray] = field(default=None)
+    pod_sigma   : Optional[np.ndarray] = field(default=None)
+    centers_pod : Optional[np.ndarray] = field(default=None)
+
     def cluster_parameters(self, k):
         return np.array([self.parameters[i] for i in self.cluster_indices[k]])
 
@@ -104,12 +110,24 @@ class ClusteringResult:
 # Cholesky energy transform
 # =============================================================================
 
-def build_cholesky_transform(M):
+def build_cholesky_transform_depreciated(M):
     factor = cholesky(sp.csc_matrix(M))
     L = factor.L()
     P = factor.P()
     return L, P
 
+def build_cholesky_transform(M):
+    """
+    Factor M so that  L Lᵀ = P M Pᵀ  (scikit-sparse >= 0.5).
+
+    cholesky() now returns a tuple (R, p) where R is the UPPER triangular
+    factor (Rᵀ R = P M Pᵀ) and p is the permutation vector. The old
+    Factor.L() returned the LOWER factor, which is Rᵀ — so we transpose to
+    keep transform()/inverse_transform() working unchanged.
+    """
+    R, P = cholesky(sp.csc_matrix(M))
+    L = sp.csc_matrix(R).T          # upper R -> lower L,  so Lᵀ = R
+    return L, P
 
 def transform(L, P, S):
     """s̃ = L^T P s"""
@@ -359,7 +377,8 @@ def cluster_kmeans_pod_whitened(S, n_clusters, rank, M_u=None):
     # Lift to DOF space: c_dof = Φ c_pod.
     centers_dofs = centers_pod @ modes.T                           # (n_clusters, n_dofs)
 
-    return labels, centers_dofs, inertia
+    return labels, centers_dofs, inertia, modes, sigma, centers_pod   # <-- extended
+
 
 
 # =============================================================================
@@ -379,12 +398,21 @@ def _cache_key(S_tilde, n_clusters, method, rank):
 def save_clustering_result(clustering, save_dir, S_tilde, n_clusters, method, rank):
     os.makedirs(save_dir, exist_ok=True)
 
+    # Persist pod_whitened artifacts when present, so the whitened selector
+    # works on cached (recompute=False) runs without recomputing the POD.
+    extra = {}
+    if getattr(clustering, "pod_modes", None) is not None:
+        extra["pod_modes"]   = clustering.pod_modes
+        extra["pod_sigma"]   = clustering.pod_sigma
+        extra["centers_pod"] = clustering.centers_pod
+
     np.savez_compressed(
         os.path.join(save_dir, "clustering.npz"),
         labels=clustering.labels,
         centroids_original=clustering.centroids_original,
         centroids_transformed=clustering.centroids_transformed,
         P=clustering.P,
+        **extra,
     )
 
     for k, idx in enumerate(clustering.cluster_indices):
@@ -420,7 +448,7 @@ def load_clustering_result(save_dir):
     parameters = [tuple(p) for p in np.load(os.path.join(save_dir, "parameters.npy")).tolist()]
     L = sp.load_npz(os.path.join(save_dir, "L.npz"))
 
-    return ClusteringResult(
+    result = ClusteringResult(
         n_clusters=n_clusters,
         labels=data["labels"],
         cluster_indices=cluster_indices,
@@ -430,6 +458,14 @@ def load_clustering_result(save_dir):
         P=data["P"],
         parameters=parameters,
     )
+
+    # Restore pod_whitened artifacts if they were saved.
+    if "pod_modes" in data.files:
+        result.pod_modes   = data["pod_modes"]
+        result.pod_sigma   = data["pod_sigma"]
+        result.centers_pod = data["centers_pod"]
+
+    return result
 
 
 def clustering_is_valid(save_dir, S_tilde, n_clusters, method, rank):
@@ -495,12 +531,15 @@ def compute_or_load_clustering(
         elif method == "pod_whitened":
             if rank is None:
                 raise ValueError("method='pod_whitened' requires rank")
-            labels, centers_dofs, _ = cluster_kmeans_pod_whitened(
+
+            labels, centers_dofs, _, modes, sigma, centers_pod = cluster_kmeans_pod_whitened(
                 S_homo, n_clusters, rank, M_u=M_u
             )
-            clustering = build_clustering_result_from_dof_centroids(
-                labels, centers_dofs, L, P, parameters
-            )
+            clustering = build_clustering_result_from_dof_centroids(labels, centers_dofs, L, P, parameters)
+            clustering.pod_modes   = modes        # (n_dofs, rank), M_u-orthonormal
+            clustering.pod_sigma   = sigma        # (rank,)
+            clustering.centers_pod = centers_pod  # (K, rank)
+
 
         else:
             raise ValueError(f"unknown clustering method: {method!r}")

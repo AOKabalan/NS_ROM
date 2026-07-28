@@ -494,7 +494,10 @@ def supremizer_enrichment(
     v_test = TestFunction(V)
     p_trial = TrialFunction(Q)
 
-    a_form = inner(grad(u_trial), grad(v_test)) * dx
+    if inner_product_type == 'H1_semi':
+        a_form = inner(grad(u_trial), grad(v_test)) * dx
+    elif inner_product_type == 'H1':
+        a_form = inner(u_trial,v_test)*dx + inner(grad(u_trial), grad(v_test)) * dx
 
     # Homogeneous BCs
     boundary_markers = [1, 3, 4, 5, 6]  # Default for pinball
@@ -512,11 +515,26 @@ def supremizer_enrichment(
     p_basis_functions = dofs_to_functions(pressure_modes.T, Q)
     s = Function(V)
     supremizer_list = []
+    from firedrake import LinearSolver
 
-    for i, p_func in enumerate(p_basis_functions):
-        rhs = assemble(-p_func * div(v_test) * dx)
-        solve(A, s, rhs)
+    A = assemble(a_form, bcs=bcs)
+
+    solver = LinearSolver(A, solver_parameters={
+        "ksp_type": "preonly",
+        "pc_type": "cholesky",                 # A is SPD (stiffness + Dirichlet)
+        "pc_factor_mat_solver_type": "mumps",
+    })
+
+    s = Function(V)
+    supremizer_list = []
+    for p_func in p_basis_functions:
+        rhs = assemble(-p_func * div(v_test) * dx, bcs=bcs)
+        solver.solve(s, rhs)                    # back-substitution only
         supremizer_list.append(s.copy(deepcopy=True))
+    # for i, p_func in enumerate(p_basis_functions):
+    #     rhs = assemble(-p_func * div(v_test) * dx)
+    #     solve(A, s, rhs)
+    #     supremizer_list.append(s.copy(deepcopy=True))
 
     # Convert to numpy array
     return functions_to_dofs(supremizer_list)

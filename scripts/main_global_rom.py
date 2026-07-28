@@ -27,7 +27,7 @@ from nsrom.navier_stokes import (
 )
 from nsrom.snapshot_collection import load_snapshot_dofs
 from nsrom.lifting_functions import load_lifting_functions
-from nsrom.helper_functions import dofs_to_functions
+from nsrom.helper_functions import dofs_to_functions, modes_for_tolerance
 
 from nsrom.rom import (
     # POD
@@ -45,46 +45,52 @@ from nsrom.rom import (
     homogenize_snapshots,
     SubMeshDEIM,
 )
-
+from sweep import save_sweep_results
 from nsrom.deim import compute_and_save_basis, load_basis_metadata
 from nsrom.online_operators import (
     DEIMOnlineOperators,
     build_deim_online_operators,
     load_ops_metadata,
 )
+from nsrom.bifurcation.detection import build_global_reduced_velocity_l2_mass_matrices
+from build_diagram_bare_global_rom import build_full_global_diagram_bare
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
 # --- Mode flags ---
-USE_DEIM = False          # True → DEIM, False → exact projection
+USE_DEIM = True          # True → DEIM, False → exact projection
 USE_AFFINE = True          # True → precompute affine convection terms
-
+USE_TENSOR = True
 # --- Paths ---
-SNAPSHOT_DIR = "two_param_snapshots_pod_dofs"
-POD_DIR = "pod_basis_two_param"
-OPS_DIR = "operators_two_param"
+# SNAPSHOT_DIR = "two_param_snapshots_pod_dofs"
+# POD_DIR = "pod_basis_two_param"
+# OPS_DIR = "operators_two_param"
+SNAPSHOT_DIR = "multi_param_multi_branch"
+POD_DIR = "global/pod_basis_multi_branch"
+OPS_DIR = "global/operators_multi_branch"
 LIFTING_DIR = "lifting"
 MESH_FILE = "mesh/mid_pinball.msh"
-FOM_CHECKPOINT = "newlygenerated_high"
+FOM_CHECKPOINT    = "initial_states/velocity_checkpoint_symm"
 
 # --- DEIM paths (only used if USE_DEIM=True) ---
-DEIM_SNAPSHOT_DIR = "two_param_snapshots_rom_deim_dofs"
-DEIM_BASIS_PATH = "deim_basis.npz"
-DEIM_OPS_PATH = "deim_ops.npz"
+DEIM_SNAPSHOT_DIR = "multi_param_multi_branch"
+DEIM_BASIS_PATH = "global/deim_basis.npz"
+DEIM_OPS_PATH = "global/deim_ops.npz"
 
 # --- DEIM basis computation (max modes to store) ---
 N_MODES_F = None              # None = full
 N_MODES_J = 200
 
 # --- DEIM online truncation (modes to use, must be ≤ stored) ---
-M_F = 100
-M_J = 100
-
+M_F = None
+M_J = None
+DEIM_ENERGY_TOL = 1e-10
 # --- ROM truncation ---
-N_VELOCITY_MODES = 35
-N_PRESSURE_MODES = 35
-N_SUPREMIZER_MODES = 35
+POD_ENERGY_TOL = 1e-8
+N_VELOCITY_MODES = 50
+N_PRESSURE_MODES = 50
+N_SUPREMIZER_MODES = 50
 INNER_PRODUCT_TYPE = 'H1'
 
 # --- Test parameters ---
@@ -190,6 +196,8 @@ def deim_debug(operators, deim_ops, problem, u_test):
 # =============================================================================
 
 def main():
+    if USE_DEIM and USE_TENSOR:
+        raise ValueError("USE_DEIM and USE_TENSOR cannot both be True — choose one (or set both to False).")
     # Print configuration
     mode_str = "DEIM" if USE_DEIM else "Exact"
     affine_str = "Affine" if USE_AFFINE else "Full"
@@ -259,11 +267,17 @@ def main():
         print(f"  Loading existing POD basis from {POD_DIR}/")
         basis_full = load_pod_basis(POD_DIR)
 
+    n_vel  = modes_for_tolerance(basis_full.velocity_eigenvalues, POD_ENERGY_TOL, N_VELOCITY_MODES)
+    n_pres = modes_for_tolerance(basis_full.pressure_eigenvalues, POD_ENERGY_TOL, N_PRESSURE_MODES)
+    n_sup  = n_pres  # match pressure
+
     basis = basis_full.truncate(
-        n_velocity=N_VELOCITY_MODES,
-        n_pressure=N_PRESSURE_MODES,
-        n_supremizer=N_SUPREMIZER_MODES,
+        n_velocity=n_vel,
+        n_pressure=n_pres,
+        n_supremizer=n_sup,
     )
+
+
     print(f"  Truncated: {basis.n_velocity_modes} vel + "
           f"{basis.n_supremizer_modes} sup + {basis.n_pressure_modes} pres")
 
@@ -335,6 +349,11 @@ def main():
 
         # --- 5b: DEIM online operators ---
         print("\n--- Step 5b: DEIM online operators ---")
+        deim_data = np.load(DEIM_BASIS_PATH)
+
+        m_F = modes_for_tolerance(deim_data['eigenvalues_F'], DEIM_ENERGY_TOL,N_MODES_F or  velocity_snapshots.shape[0])
+        m_J = modes_for_tolerance(deim_data['eigenvalues_J'], DEIM_ENERGY_TOL, N_MODES_J)
+
 
         Z_u = operators.Z_u
         n_rom_modes = Z_u.shape[1]
@@ -344,13 +363,13 @@ def main():
             reason = "forced recompute"
         else:
             rebuild, reason = needs_ops_rebuild(
-                DEIM_OPS_PATH, DEIM_BASIS_PATH, M_F, M_J, n_rom_modes
+                DEIM_OPS_PATH, DEIM_BASIS_PATH, m_F, m_J, n_rom_modes
             )
 
         if rebuild:
             print(f"  Building DEIM operators: {reason}")
             deim_ops = build_deim_online_operators(
-                DEIM_BASIS_PATH, Z_u, M_F, M_J
+                DEIM_BASIS_PATH, Z_u, m_F, m_J
             )
             deim_ops.save(DEIM_OPS_PATH, basis_path=DEIM_BASIS_PATH)
         else:
@@ -364,119 +383,158 @@ def main():
         print("\n--- Step 5: DEIM skipped (USE_DEIM=False) ---")
         submesh_deim = None
 
-    # =========================================================================
-    # STEP 6: Solve ROM
-    # =========================================================================
-    print("\n--- Step 6: Solve ROM ---")
 
-    Re = TEST_RE
-    nu = 1.0 / Re
-    amp = TEST_AMP
+    if USE_TENSOR:
+        # --- Build exact convection tensors (once) ---
+        from nsrom.tensor_convection import (build_convection_tensor, save_convection_tensor,
+                                    TensorConvection, verify_against_exact)
+        import os
 
-    # Load FOM solution for initial guess
-    fom_solution = load_solution(FOM_CHECKPOINT, problem)
-    velocity_dofs = fom_solution.velocity.dat.data_ro.flatten()
-    pressure_dofs = fom_solution.pressure.dat.data_ro.flatten()
+        Z_u_k = operators.Z_u                       # (n_dofs, N_u), includes supremizers
+        tpath = os.path.join("global", "conv_tensor.npz")
+        if not os.path.exists(tpath):
+            N = build_convection_tensor(Z_u_k, problem.velocity_space)
+            save_convection_tensor(N, tpath)
+        else:
+            from nsrom.tensor_convection import load_convection_tensor
+            N = load_convection_tensor(tpath)
+            if N.shape[0] != Z_u_k.shape[1]:      # basis changed under a stale tensor
+                N = build_convection_tensor(Z_u_k, problem.velocity_space)
+                save_convection_tensor(N, tpath)
+        tensor_conv = TensorConvection(N)
+        verify_against_exact(tensor_conv, Z_u_k, problem.velocity_space,
+                            np.random.randn(Z_u_k.shape[1]))   # must print ~1e-12
+
+        operators.tensor_convection = tensor_conv
+
+    initial_solution = load_solution(FOM_CHECKPOINT, problem)
 
     M_u = assemble_inner_product_matrix(problem.velocity_space, INNER_PRODUCT_TYPE)
     M_p = assemble_inner_product_matrix(problem.pressure_space, 'L2')
 
-    u_coeffs, p_coeffs = project_to_rom_coefficients(
-        velocity_dofs, pressure_dofs,
-        operators,
-        amp=amp,
-        M_u=M_u,
-        M_p=M_p,
+    M_uu_red = build_global_reduced_velocity_l2_mass_matrices(problem, operators)
+
+    results = build_full_global_diagram_bare(
+        Re_range=np.arange(50.0, 100.0, 1.0),
+        amp_values=[-0.3, -0.2, -0.1, 0.1, 0.2, 0.3],
+        operators=operators, deim_ops=deim_ops,
+        problem=problem, initial_solution=initial_solution,
+        M_u=M_u, M_p=M_p, M_uu_red=M_uu_red,
+        use_deim=USE_DEIM, fom_compute = True
     )
-
-    # Optional DEIM sanity check
-    if USE_DEIM:
-        u_test = Function(problem.velocity_space)
-        u_test.dat.data[:] = velocity_dofs.reshape(u_test.dat.data.shape)
-        deim_debug(operators, deim_ops, problem, u_test)
-
-
-
-    # Solve — deim_ops=None → exact, deim_ops=... → DEIM
-    t0 = time.perf_counter()
-    solution = solve_rom(
-        operators=operators,
-        nu=nu,
-        amp=amp,
-        problem=problem,
-        deim_ops=deim_ops,
-        u_initial_guess=u_coeffs,
-        p_initial_guess=p_coeffs,
-        submesh_deim = submesh_deim,
-    )
-    t_rom = time.perf_counter() - t0
-    print(f"\n  Solution:")
-    print(f"    Re = {solution.reynolds}, amp = {solution.amplitude}")
-    print(f"    converged = {solution.converged}, iterations = {solution.iterations}")
-    print(f"    ||alpha|| = {np.linalg.norm(solution.velocity_coeffs):.6e}")
-    print(f"    ||beta||  = {np.linalg.norm(solution.pressure_coeffs):.6e}")
-    print(f"    N_u = {len(solution.velocity_coeffs)}, N_p = {len(solution.pressure_coeffs)}")
+    from speedup_summary import speedup_summary
+    stats = speedup_summary(results)      # prints the table, returns the dict
+    save_sweep_results(results, "global/global_rom_sweep_results.csv")
 
     # =========================================================================
-    # STEP 7: Reconstruct
-    # =========================================================================
-    print("\n--- Step 7: Reconstruct solution ---")
-    u_rom, p_rom = reconstruct_solution(solution, operators, problem, amp= TEST_AMP)
-    print(f"  ||u_rom|| = {norm(u_rom):.6e}")
-    print(f"  ||p_rom|| = {norm(p_rom):.6e}")
+    # # STEP 6: Solve ROM
+    # # =========================================================================
+    # print("\n--- Step 6: Solve ROM ---")
 
-    # =========================================================================
-    # STEP 8: Compare with FOM
-    # =========================================================================
-    print("\n--- Step 8: Compare with FOM ---")
+    # Re = TEST_RE
+    # nu = 1.0 / Re
+    # amp = TEST_AMP
 
-    problem.reynolds.assign(Re)
-    problem.amplitude.assign(amp)
+    # # Load FOM solution for initial guess
+    # velocity_dofs = fom_solution.velocity.dat.data_ro.flatten()
+    # pressure_dofs = fom_solution.pressure.dat.data_ro.flatten()
 
-    print("  Solving FOM...")
-    # FOM solve
-    t0 = time.perf_counter()
-    HF_solution = solve_steady_navier_stokes(
-        problem, initial_guess=fom_solution.solution
-    )
-    t_fom = time.perf_counter() - t0
+    # u_coeffs, p_coeffs = project_to_rom_coefficients(
+    #     velocity_dofs, pressure_dofs,
+    #     operators,
+    #     amp=amp,
+    #     M_u=M_u,
+    #     M_p=M_p,
+    # )
+
+    # # Optional DEIM sanity check
+    # if USE_DEIM:
+    #     u_test = Function(problem.velocity_space)
+    #     u_test.dat.data[:] = velocity_dofs.reshape(u_test.dat.data.shape)
+    #     deim_debug(operators, deim_ops, problem, u_test)
 
 
-    u_fom = HF_solution.velocity
-    p_fom = HF_solution.pressure
 
-    # Compute errors
-    def norm_M(v, M):
-        return np.sqrt(v.T @ (M @ v))
+    # # Solve — deim_ops=None → exact, deim_ops=... → DEIM
+    # t0 = time.perf_counter()
+    # solution = solve_rom(
+    #     operators=operators,
+    #     nu=nu,
+    #     amp=amp,
+    #     problem=problem,
+    #     deim_ops=deim_ops,
+    #     u_initial_guess=u_coeffs,
+    #     p_initial_guess=p_coeffs,
+    #     submesh_deim = submesh_deim,
+    # )
+    # t_rom = time.perf_counter() - t0
+    # print(f"\n  Solution:")
+    # print(f"    Re = {solution.reynolds}, amp = {solution.amplitude}")
+    # print(f"    converged = {solution.converged}, iterations = {solution.iterations}")
+    # print(f"    ||alpha|| = {np.linalg.norm(solution.velocity_coeffs):.6e}")
+    # print(f"    ||beta||  = {np.linalg.norm(solution.pressure_coeffs):.6e}")
+    # print(f"    N_u = {len(solution.velocity_coeffs)}, N_p = {len(solution.pressure_coeffs)}")
 
-    u_fom_dofs = u_fom.dat.data_ro.flatten()
-    u_rom_dofs = u_rom.dat.data_ro.flatten()
-    p_fom_dofs = p_fom.dat.data_ro.flatten()
-    p_rom_dofs = p_rom.dat.data_ro.flatten()
+    # # =========================================================================
+    # # STEP 7: Reconstruct
+    # # =========================================================================
+    # print("\n--- Step 7: Reconstruct solution ---")
+    # u_rom, p_rom = reconstruct_solution(solution, operators, problem, amp= TEST_AMP)
+    # print(f"  ||u_rom|| = {norm(u_rom):.6e}")
+    # print(f"  ||p_rom|| = {norm(p_rom):.6e}")
 
-    u_err = norm_M(u_fom_dofs - u_rom_dofs, M_u) / norm_M(u_fom_dofs, M_u)
-    p_err = norm_M(p_fom_dofs - p_rom_dofs, M_p) / norm_M(p_fom_dofs, M_p)
+    # # =========================================================================
+    # # STEP 8: Compare with FOM
+    # # =========================================================================
+    # print("\n--- Step 8: Compare with FOM ---")
 
-    # =========================================================================
-    # SUMMARY
-    # =========================================================================
-    print(f"\n{'='*80}")
-    print(f"SUMMARY — {mode_str} solver, {affine_str} convection")
-    print(f"{'='*80}")
-    print(f"  Re = {Re}, amp = {amp}")
-    print(f"  ROM:  {operators.n_velocity_modes} velocity × {operators.n_pressure_modes} pressure")
-    print(f"  Affine convection: {operators.has_affine_convection}")
-    if USE_DEIM:
-        print(f"  DEIM: m_F={deim_ops.m_F}, m_J={deim_ops.m_J}")
-    print(f"  Converged: {solution.converged} ({solution.iterations} iterations)")
-    print(f"  Velocity error ({INNER_PRODUCT_TYPE}): {u_err*100:.4f}%")
-    print(f"  Pressure error (L2):                   {p_err*100:.4f}%")
-    print(f"{'='*80}")
-    print(f"=================================== SPEEDUP ====================================")
-    print(f"  ROM solve: {t_rom:.4f} s")
-    print(f"  FOM solve: {t_fom:.4f} s")
-    print(f"  Speedup:   {t_fom / t_rom:.1f}x")
-    print(f"{'='*80}")
+    # problem.reynolds.assign(Re)
+    # problem.amplitude.assign(amp)
+
+    # print("  Solving FOM...")
+    # # FOM solve
+    # t0 = time.perf_counter()
+    # HF_solution = solve_steady_navier_stokes(
+    #     problem, initial_guess=fom_solution.solution
+    # )
+    # t_fom = time.perf_counter() - t0
+
+
+    # u_fom = HF_solution.velocity
+    # p_fom = HF_solution.pressure
+
+    # # Compute errors
+    # def norm_M(v, M):
+    #     return np.sqrt(v.T @ (M @ v))
+
+    # u_fom_dofs = u_fom.dat.data_ro.flatten()
+    # u_rom_dofs = u_rom.dat.data_ro.flatten()
+    # p_fom_dofs = p_fom.dat.data_ro.flatten()
+    # p_rom_dofs = p_rom.dat.data_ro.flatten()
+
+    # u_err = norm_M(u_fom_dofs - u_rom_dofs, M_u) / norm_M(u_fom_dofs, M_u)
+    # p_err = norm_M(p_fom_dofs - p_rom_dofs, M_p) / norm_M(p_fom_dofs, M_p)
+
+    # # =========================================================================
+    # # SUMMARY
+    # # =========================================================================
+    # print(f"\n{'='*80}")
+    # print(f"SUMMARY — {mode_str} solver, {affine_str} convection")
+    # print(f"{'='*80}")
+    # print(f"  Re = {Re}, amp = {amp}")
+    # print(f"  ROM:  {operators.n_velocity_modes} velocity × {operators.n_pressure_modes} pressure")
+    # print(f"  Affine convection: {operators.has_affine_convection}")
+    # if USE_DEIM:
+    #     print(f"  DEIM: m_F={deim_ops.m_F}, m_J={deim_ops.m_J}")
+    # print(f"  Converged: {solution.converged} ({solution.iterations} iterations)")
+    # print(f"  Velocity error ({INNER_PRODUCT_TYPE}): {u_err*100:.4f}%")
+    # print(f"  Pressure error (L2):                   {p_err*100:.4f}%")
+    # print(f"{'='*80}")
+    # print(f"=================================== SPEEDUP ====================================")
+    # print(f"  ROM solve: {t_rom:.4f} s")
+    # print(f"  FOM solve: {t_fom:.4f} s")
+    # print(f"  Speedup:   {t_fom / t_rom:.1f}x")
+    # print(f"{'='*80}")
 
 if __name__ == "__main__":
     main()

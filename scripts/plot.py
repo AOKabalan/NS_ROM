@@ -30,6 +30,7 @@ def plot_lift_3d(
     Re  = parameters[:, 0]
     amp = parameters[:, 1]
     unique_labels = np.unique(labels)
+    n_clusters = len(unique_labels)
 
     fig = plt.figure(figsize=figsize)
     ax = fig.add_subplot(111, projection='3d')
@@ -62,4 +63,37 @@ def plot_lift_3d(
     ax.view_init(elev=elev, azim=azim)
 
     plt.tight_layout()
+    plt.savefig(f'lift_in_{n_clusters}_clusters.png', dpi=150, bbox_inches='tight')
+
+    print(f" lift_in_{n_clusters}_clusters.png")
+    plt.show()
+
+def plot_sweep_lift_3d(csv_path, figsize=(14, 10), cmap='tab10', elev=20, azim=45):
+    import pandas as pd
+
+    df = pd.read_csv(csv_path).dropna(subset=['C_L'])
+    unique_clusters = sorted(df['cluster'].unique())
+    n_clusters = len(unique_clusters)
+    colors = plt.get_cmap(cmap)(np.linspace(0, 1, n_clusters))
+
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, projection='3d')
+
+    for cluster, color in zip(unique_clusters, colors):
+        mask = df['cluster'] == cluster
+        ax.scatter(df.loc[mask, 'Re'], df.loc[mask, 'amp'], df.loc[mask, 'C_L'],
+                   color=color, label=f'Cluster {cluster}',
+                   s=60, alpha=0.8, edgecolors='k', linewidth=0.3)
+
+    ax.set_xlabel('Re', fontsize=12, labelpad=10)
+    ax.set_ylabel('Amplitude', fontsize=12, labelpad=10)
+    ax.set_zlabel('C_L', fontsize=12, labelpad=10)
+    ax.set_title(f'Lift surface colored by cluster (K={n_clusters})', fontsize=13, pad=20)
+    ax.view_init(elev=elev, azim=azim)
+    ax.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=10)
+
+    plt.tight_layout()
+    out = csv_path.replace('.csv', '_lift_clusters_3d.png')
+    plt.savefig(out, dpi=150, bbox_inches='tight')
+    print(f"  Saved to {out}")
     plt.show()

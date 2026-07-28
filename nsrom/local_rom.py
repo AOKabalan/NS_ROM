@@ -10,9 +10,16 @@ Depends on:
   * nsrom.deim, nsrom.online_operators, nsrom.deim_helpers — for DEIM
 """
 import os
+import time
+from dataclasses import dataclass, field
+from typing import Optional
+
 import numpy as np
 
+from firedrake import Function  # for type hints only
+
 from nsrom.helper_functions import dofs_to_functions, modes_for_tolerance
+from nsrom.navier_stokes import NavierStokesSolution, ForceCoefficients
 from nsrom.rom import (
     ROMSolution,
     compute_pod_basis,
@@ -23,7 +30,6 @@ from nsrom.rom import (
     load_reduced_operators,
     homogenize_snapshots,
     solve_rom,
-    solve_rom_with_internals,
     reconstruct_solution,
     project_to_rom_coefficients,
     SubMeshDEIM,
@@ -31,16 +37,176 @@ from nsrom.rom import (
 from nsrom.deim import compute_and_save_basis
 from nsrom.online_operators import DEIMOnlineOperators, build_deim_online_operators
 from nsrom.deim_helpers import needs_basis_recompute, needs_ops_rebuild
-import time
-from dataclasses import dataclass
 
 
+# =============================================================================
+# LocalROMResult — wraps a ROMSolution with local-solve metadata
+# =============================================================================
 
+@dataclass
+class LocalROMResult:
+    """
+    Result of a local-ROM solve at a single parameter point.
+
+    Wraps a ROMSolution together with local-solve metadata:
+      - the cluster used,
+      - the reconstructed full-order field,
+      - the wall-clock solve time,
+      - optionally the Firedrake internals (w_rom, callback_data) for
+        post-solve work like the bifurcation indicator.
+
+    Read-only properties mirror the underlying ROMSolution fields and
+    provide the legacy ``u_coeffs``/``p_coeffs`` aliases used by older
+    call sites.
+    """
+    solution: ROMSolution = field(repr=False)
+    cluster: int
+    reconstructed: NavierStokesSolution = field(repr=False)
+    t_rom: float
+    w_rom: Optional[Function] = field(default=None, repr=False)
+    callback_data: Optional[dict] = field(default=None, repr=False)
+
+    # ---- Pass-through accessors to the underlying ROMSolution ----
+    @property
+    def velocity_coeffs(self):
+        return self.solution.velocity_coeffs
+
+    @property
+    def pressure_coeffs(self):
+        return self.solution.pressure_coeffs
+
+    @property
+    def u_coeffs(self):
+        """Legacy alias for velocity_coeffs."""
+        return self.solution.velocity_coeffs
+
+    @property
+    def p_coeffs(self):
+        """Legacy alias for pressure_coeffs."""
+        return self.solution.pressure_coeffs
+
+    @property
+    def converged(self):
+        return self.solution.converged
+
+    @property
+    def iterations(self):
+        return self.solution.iterations
+
+    @property
+    def amplitude(self):
+        return self.solution.amplitude
+
+    @property
+    def reynolds(self):
+        return self.solution.reynolds
+
+    @property
+    def metadata(self):
+        return self.solution.metadata
+
+    def summary(self):
+        """Print a short summary of the local-ROM solve."""
+        print(f"  Cluster:    {self.cluster}")
+        print(f"  Amplitude:  {self.amplitude}")
+        print(f"  Converged:  {self.converged}")
+        print(f"  Iterations: {self.iterations}")
+        print(f"  ROM time:   {self.t_rom:.3f}s")
+
+
+def _make_local_result(
+    solution: ROMSolution,
+    *,
+    cluster: int,
+    reconstructed: NavierStokesSolution,
+    t_rom: float,
+    w_rom: Optional[Function] = None,
+    callback_data: Optional[dict] = None,
+) -> LocalROMResult:
+    """
+    Bundle a ROMSolution with local-solve metadata into a LocalROMResult.
+
+    Also writes cluster/t_rom into the underlying ROMSolution.metadata so
+    that information survives a pure-ROMSolution save/load cycle.
+    """
+    solution.metadata.update({
+        'cluster': cluster,
+        't_rom': t_rom,
+        'has_reconstruction': reconstructed is not None,
+        'has_internals': w_rom is not None or callback_data is not None,
+    })
+    return LocalROMResult(
+        solution=solution,
+        cluster=cluster,
+        reconstructed=reconstructed,
+        t_rom=t_rom,
+        w_rom=w_rom,
+        callback_data=callback_data,
+    )
+
+def project_initial_solution(
+    initial_solution,
+    operators,
+    amp,
+    M_u,
+    M_p,
+):
+    velocity_dofs = initial_solution.velocity.dat.data_ro.flatten()
+    pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
+
+    return project_to_rom_coefficients(
+        velocity_dofs,
+        pressure_dofs,
+        operators,
+        amp=amp,
+        M_u=M_u,
+        M_p=M_p,
+    )
 # =============================================================================
 # Cluster selection
 # =============================================================================
-def select_cluster_by_box_then_centroid(clustering, Re, amp):
+#
+# Strategies available (the primary path used by `solve_at_parameter` is
+# box+centroid in parameter space combined with the M-norm distance in
+# solution space):
+#
+#   select_cluster_by_box_then_centroid(clustering, Re, amp)
+#       Primary parameter-space selector. Prefers clusters whose parameter
+#       bounding box contains the query; falls back to nearest centroid
+#       (normalized) when no box matches. Returns (best, distances) where
+#       non-eligible clusters have +inf entries unless we fell back.
+#
+#   select_cluster(clustering, Re, amp)
+#       Simpler parameter-space alternative: nearest centroid by
+#       normalized distance, no box test. Used for diagnostics.
+#
+#   select_cluster_solution_space(clustering, initial_solution, M_u)
+#       Solution-space selector. M-norm distance from the initial
+#       velocity field to each cluster's centroid in full-DOF space.
+#
+#   select_cluster_closest(d1, d2)
+#       Combine two distance arrays into one ranking. Each input is
+#       independently rescaled to [0, 1] so the combination is invariant
+#       to the (very different) physical scales of parameter- vs.
+#       solution-space distances; the cluster minimizing the Euclidean
+#       norm in the rescaled plane is returned.
+#
+#   precompute_fast_selection(...) + select_cluster_reduced(...)
+#       Fast online path for tight continuation loops. Precompute
+#       Z_i^T M c_j once, then select in reduced coordinates without
+#       expanding to full DOFs.
 
+
+def select_cluster_by_box_then_centroid(clustering, Re, amp, verbose=True):
+    """
+    Parameter-space cluster selection with box check + centroid fallback.
+
+    Returns (best, distances). When at least one cluster contains the
+    query in its parameter box, `distances` has +inf for non-eligible
+    clusters and the rescaled centroid distance for eligible ones.
+    When no cluster contains the query, falls back to centroid distance
+    over all clusters.
+    """
     query = np.array([Re, amp])
 
     centers = np.array([
@@ -52,130 +218,201 @@ def select_cluster_by_box_then_centroid(clustering, Re, amp):
     scales = np.ptp(centers, axis=0)
     scales[scales == 0] = 1.0
 
-    # Distances to all centroids
     raw_distances = np.linalg.norm((centers - query) / scales, axis=1)
     distances = np.full(clustering.n_clusters, np.inf)
 
-    # Find clusters whose parameter box contains the query
     eligible = []
-
     for k in range(clustering.n_clusters):
         params_k = clustering.cluster_parameters(k)
-
         re_min, amp_min = params_k.min(axis=0)
         re_max, amp_max = params_k.max(axis=0)
 
-        in_box = (
-            re_min <= Re <= re_max
-            and amp_min <= amp <= amp_max
-        )
+        in_box = (re_min <= Re <= re_max) and (amp_min <= amp <= amp_max)
 
         if in_box:
             eligible.append(k)
             distances[k] = raw_distances[k]
 
-    # Choose best cluster
     if eligible:
         best = int(np.argmin(distances))
-
         mode = "box + centroid"
     else:
-        # fallback: no cluster contains query, so use true centroid distances
         distances = raw_distances.copy()
         best = int(np.argmin(distances))
         mode = "centroid fallback"
-    print(f"  Query (Re={Re}, amp={amp})")
-    print(f"  Selection mode: {mode}")
 
-    for k, d in enumerate(distances):
-        box_marker = " in-box" if k in eligible else ""
-        best_marker = " ←" if k == best else ""
-        print(f"  Cluster {k}: distance={d:.4f}{box_marker}{best_marker}")
-
+    if verbose:
+        print(f"  Query (Re={Re}, amp={amp})")
+        print(f"  Selection mode: {mode}")
+        for k, d in enumerate(distances):
+            box_marker = " in-box" if k in eligible else ""
+            best_marker = " ←" if k == best else ""
+            print(f"  Cluster {k}: distance={d:.4f}{box_marker}{best_marker}")
 
     return best, distances
 
+
 def select_cluster(clustering, Re, amp):
-    """Parameter-space cluster selection with normalized distances."""
-    query    = np.array([Re, amp])
-    centers  = np.array([clustering.parameter_centroid(k)
-                         for k in range(clustering.n_clusters)])
+    """
+    Simple parameter-space selector: nearest centroid by normalized
+    distance, no box check.
+
+    Used for diagnostics and as a quieter alternative to
+    `select_cluster_by_box_then_centroid`.
+    """
+    query = np.array([Re, amp])
+    centers = np.array([
+        clustering.parameter_centroid(k)
+        for k in range(clustering.n_clusters)
+    ])
     scales = np.ptp(centers, axis=0)
     scales[scales == 0] = 1.0
     distances = np.linalg.norm((centers - query) / scales, axis=1)
     best = int(np.argmin(distances))
+    return best
 
-    print(f"  Query (Re={Re}, amp={amp})")
-    for k, d in enumerate(distances):
-        marker = " ←" if k == best else ""
-        print(f"  Cluster {k}: distance={d:.4f}{marker}")
-    return best,distances
 
-def select_cluster_solution_space(clustering,initial_condition,M_u):
+def select_cluster_solution_space(clustering, initial_solution, M_u):
+    """
+    Solution-space cluster selection.
+
+    Computes the M-norm distance from the initial velocity field to each
+    cluster's centroid in full-DOF space and picks the closest.
+    """
     K = clustering.n_clusters
-    distances_sq = np.zeros(K)
-
     centroids = clustering.centroids_original
-    print(f' The shape is {centroids.shape}')
-    u_fun = initial_condition.velocity
-    u_dof = u_fun.dat.data_ro.flatten()
+    u_dof = initial_solution.velocity.dat.data_ro.flatten()
 
+    distances = np.zeros(K)
     for j in range(K):
-        diff = u_dof - centroids[:,j]
-        distances_sq[j] = np.sqrt(diff.T @ M_u @ diff)
+        diff = u_dof - centroids[:, j]
+        distances[j] = np.sqrt(diff.T @ M_u @ diff)
+    best = int(np.argmin(distances))
 
-    best = int(np.argmin(distances_sq))
-    for k, d in enumerate(distances_sq):
-        marker = " ←" if k == best else ""
-        print(f"  Cluster {k}: distance={d:.4f}{marker}")
-    return best, distances_sq
-
-def select_cluster_closest(d1,d2):
-    score = np.sqrt((d1 - np.min(d1))**2 + (d2 - np.min(d2))**2)
-    print(score)
-    best_cluster = np.argmin(score)
-    print(f'Closest commom cluster is: {best_cluster}')
-    return best_cluster
+    # for k, d in enumerate(distances):
+    #     best_marker = " ←" if k == best else ""
+    #     print(f"  Cluster {k}: distance={d:.4f}{best_marker}")
 
 
 
 
-def precompute_fast_selection(clustering, operators, M_u):
+    best = int(np.argmin(distances))
+    return best, distances
+
+
+def select_cluster_closest(d1, d2):
     """
-    Precompute data for reduced-coordinate cluster selection.
-
-    For each cluster j, stores:
-        c_norm_sq[j] = ||c_j||²_M   (scalar)
-    For each pair (i, j), stores:
-        cross[i,j] = Z_i^T M c_j    (vector, length n_modes_i)
-
-    Then: ||Z_i a - c_j||²_M = ||a||² - 2 a^T cross[i,j] + c_norm_sq[j]
-    (uses M-orthonormality: Z_i^T M Z_i = I)
+    Combine two distance arrays and pick the minimum,
+    ignoring clusters with +inf or NaN in either distance array.
     """
-    K = clustering.n_clusters
-    centroids = clustering.centroids_original  # (n_dofs, K)
+    d1 = np.asarray(d1, dtype=float)
+    d2 = np.asarray(d2, dtype=float)
 
-    c_norm_sq = np.zeros(K)
-    for j in range(K):
-        c_j = centroids[:, j]
-        c_norm_sq[j] = float(c_j @ (M_u @ c_j))
+    # Only clusters with finite distances in both arrays are selectable
+    finite = np.isfinite(d1) & np.isfinite(d2)
 
-    cross = {}
-    for i in range(K):
-        Z_i = operators[i].Z_u  # (n_dofs, n_modes_i)
-        for j in range(K):
-            c_j = centroids[:, j]
-            cross[(i, j)] = Z_i.T @ (M_u @ c_j)
+    if not np.any(finite):
+        raise ValueError("No finite clusters available for selection.")
+
+    def _normalize_finite(d, mask):
+        out = np.full_like(d, np.inf, dtype=float)
+
+        vals = d[mask]
+        spread = vals.max() - vals.min()
+
+        if spread < 1e-15:
+            out[mask] = 0.0
+        else:
+            out[mask] = (vals - vals.min()) / spread
+
+        return out
+
+    # d1n = _normalize_finite(d1, finite)
+    # d2n = _normalize_finite(d2, finite)
+
+    score = np.full_like(d1, np.inf, dtype=float)
+    score[finite] = np.sqrt(d1[finite] ** 2 + d2[finite] ** 2)
+    # score[finite] = np.sqrt(d1n[finite] ** 2 + d2n[finite] ** 2)
+
+    return int(np.argmin(score))
+
+def select_the_cluster(clustering, Re, amp, initial_solution, M_u, cluster_forced = None, verbose = False):
+
+    # ---- Cluster selection ----
+    k1, d1 = select_cluster_by_box_then_centroid(
+        clustering, Re, amp, verbose=verbose,
+    )
+    k2, d2 = select_cluster_solution_space(clustering, initial_solution, M_u)
+
+    if verbose:
+        print(f"  Closest in parameter space: {k1}")
+        print(f"  Closest in solution space:  {k2}")
+
+    if cluster_forced is not None:
+        k = cluster_forced
+        if verbose:
+            print(f"  Forced to use cluster: {cluster_forced}")
+    else:
+        k = select_cluster_closest(d1, d2)
+        if verbose:
+            print(f"  Selected cluster:      {k}")
+    return k
+
+def precompute_fast_selection(clustering, operators, M_u, verbose=True):
+    """
+    Precompute data for cluster selection in whitened global-POD space —
+    the SAME space the pod_whitened k-means clustering used.
+
+    Requires (from method='pod_whitened'):
+        clustering.pod_modes   : (n_dofs, rank)  global POD basis Phi, M_u-orthonormal
+        clustering.pod_sigma   : (rank,)         per-mode sigma = sqrt(lambda)
+        clustering.centers_pod : (K, rank)       centroids in RAW POD coords
+
+    For each cluster i, stores the lift-to-global-POD operator
+        G[i] = Phi^T M_u Z_i          (rank x n_modes_i)
+    so that online the global POD coords of a state Z_i a are just G[i] @ a.
+    The centroids are pre-whitened once: c_white = centers_pod / sigma.
+
+    Online distance:  d_j = || (G[k_prev] @ a)/sigma  -  c_white_j ||.
+    """
+    for attr in ("pod_modes", "pod_sigma", "centers_pod"):
+        if getattr(clustering, attr, None) is None:
+            raise AttributeError(
+                f"clustering.{attr} missing — whitened selection needs the "
+                "pod_whitened artifacts. Recompute the clustering "
+                "(recompute_clustering=True) or persist them in save/load."
+            )
+
+    Phi   = clustering.pod_modes          # (n_dofs, rank), M_u-orthonormal
+    sigma = clustering.pod_sigma          # (rank,)
+    K     = clustering.n_clusters
+
+    G = {i: Phi.T @ (M_u @ operators[i].Z_u) for i in range(K)}   # (rank x n_modes_i)
+    centers_white = clustering.centers_pod / sigma[None, :]       # (K, rank)
 
     clustering.fast_selection = {
-        'c_norm_sq': c_norm_sq,
-        'cross': cross,
+        'G': G,
+        'sigma': sigma,
+        'centers_white': centers_white,
     }
 
-    print(f"  Fast selection precomputed: {K} clusters, {K*K} cross vectors")
+    if verbose:
+        print(f"  Fast selection precomputed (whitened POD): "
+              f"{K} clusters, rank={Phi.shape[1]}")
 
 
-def select_cluster_reduced(clustering, a_prev, k_prev):
+def _whitened_pod_distances(clustering, a_prev, k_prev):
+    """
+    Distance from the state (given as local coeffs a_prev in cluster k_prev)
+    to every centroid, measured in the whitened global-POD space used by
+    k-means. Returns (K,) array of distances.
+    """
+    fs = clustering.fast_selection
+    g  = (fs['G'][k_prev] @ a_prev) / fs['sigma']            # whitened state coords
+    return np.linalg.norm(fs['centers_white'] - g[None, :], axis=1)
+
+
+def select_cluster_reduced(clustering, a_prev, k_prev, verbose=True):
     """
     Select cluster using reduced coordinates (no DOF expansion).
 
@@ -184,6 +421,7 @@ def select_cluster_reduced(clustering, a_prev, k_prev):
     clustering : ClusteringResult with fast_selection populated
     a_prev     : (n_modes,) reduced velocity coefficients from previous solve
     k_prev     : int, cluster index of previous solve
+    verbose    : print per-cluster distances
 
     Returns
     -------
@@ -192,22 +430,15 @@ def select_cluster_reduced(clustering, a_prev, k_prev):
     fs = clustering.fast_selection
     K = clustering.n_clusters
 
-    a_norm_sq = float(a_prev @ a_prev)  # ||a||² (M-orthonormal basis)
+    distances = _whitened_pod_distances(clustering, a_prev, k_prev)  # (K,) whitened POD
 
-    distances_sq = np.zeros(K)
-    for j in range(K):
-        distances_sq[j] = (
-            a_norm_sq
-            - 2.0 * float(a_prev @ fs['cross'][(k_prev, j)])
-            + fs['c_norm_sq'][j]
-        )
+    best = int(np.argmin(distances))
 
-    best = int(np.argmin(distances_sq))
-
-    print(f"  Reduced selection (from cluster {k_prev}):")
-    for k in range(K):
-        marker = " ←" if k == best else ""
-        print(f"    Cluster {k}: d²_M = {distances_sq[k]:.4f}{marker}")
+    if verbose:
+        print(f"  Reduced selection (from cluster {k_prev}):")
+        for k in range(K):
+            marker = " ←" if k == best else ""
+            print(f"    Cluster {k}: d_white = {distances[k]:.4f}{marker}")
     return best
 
 
@@ -215,7 +446,7 @@ def select_cluster_reduced(clustering, a_prev, k_prev):
 # Change of basis
 # =============================================================================
 
-def precompute_change_of_basis(clustering, operators, M_u, M_p):
+def precompute_change_of_basis(clustering, operators, M_u, M_p, verbose=True):
     """
     Precompute change-of-basis matrices for cluster switching.
 
@@ -253,8 +484,10 @@ def precompute_change_of_basis(clustering, operators, M_u, M_p):
         'n_lifting': n_lifting,
     }
 
-    n_pairs = K * (K - 1)
-    print(f"  Change-of-basis precomputed: {n_pairs} pairs, {n_lifting} lifting functions")
+    if verbose:
+        n_pairs = K * (K - 1)
+        print(f"  Change-of-basis precomputed: {n_pairs} pairs, "
+              f"{n_lifting} lifting functions")
 
 
 def apply_change_of_basis(clustering, i, j, alpha_i, beta_i, thetas_old, thetas_new):
@@ -357,6 +590,7 @@ def build_cluster_deim(
     layout,
     u_base,
     u_control,
+    M_u,
 ):
     """
     Build (or load) the DEIM basis and online operators for cluster k.
@@ -387,10 +621,16 @@ def build_cluster_deim(
     if recompute_basis:
         deim_vel_k = deim_snapshot_data['velocity'][idx, :]
         deim_params_k = np.array([deim_snapshot_data['parameters'][i] for i in idx])
+        # if cfg.compute_affine_convection:
+        #     deim_vel_k = homogenize_snapshots(
+        #         deim_vel_k, deim_params_k, u_base, u_control,
+        #     )
         if cfg.compute_affine_convection:
-            deim_vel_k = homogenize_snapshots(
-                deim_vel_k, deim_params_k, u_base, u_control,
-            )
+            deim_vel_k = homogenize_snapshots(deim_vel_k, deim_params_k, u_base, u_control)
+            # NEW: evaluate F on the POD-truncated states the online solver visits,
+            # not the raw fluctuations (kills the ~sqrt(pod_tol) tail-contamination floor)
+            # A = Z_u_k.T @ (M_u @ deim_vel_k.T)      # (r, n_snaps)  M_u-orthonormal projection
+            # deim_vel_k = (Z_u_k @ A).T
         deim_vel_functions_k = dofs_to_functions(deim_vel_k, problem.velocity_space)
         os.makedirs(os.path.dirname(bp), exist_ok=True)
         compute_and_save_basis(
@@ -405,8 +645,8 @@ def build_cluster_deim(
 
     # --- Adaptive DEIM mode selection ---
     deim_data = np.load(bp)
-    m_F_k = modes_for_tolerance(deim_data['eigenvalues_F'], cfg.deim_energy_tol, cfg.m_F_max)
-    m_J_k = modes_for_tolerance(deim_data['eigenvalues_J'], cfg.deim_energy_tol, cfg.m_J_max)
+    m_F_k = modes_for_tolerance(deim_data['eigenvalues_F'], cfg.deim_energy_tol_F, cfg.m_F_max)
+    m_J_k = modes_for_tolerance(deim_data['eigenvalues_J'], cfg.deim_energy_tol_J, cfg.m_J_max)
 
     # --- DEIM online operators ---
     if cfg.recompute_deim or cfg.recompute_pod:
@@ -433,6 +673,7 @@ def build_local_roms(
     problem,
     cfg,
     layout,
+    M_u,
 ):
     """
     Build (or load) all per-cluster local ROMs.
@@ -463,7 +704,7 @@ def build_local_roms(
         deim_ops_k = build_cluster_deim(
             k, clustering, operators_k,
             deim_snapshot_data, deim_snapshot_dir,
-            problem, cfg, layout, u_base, u_control,
+            problem, cfg, layout, u_base, u_control,M_u,
         )
 
         bases[k]         = basis_k
@@ -472,65 +713,11 @@ def build_local_roms(
 
     return bases, operators, deim_ops_dict
 
-def _rom_solution_summary(self):
-    """Print a short summary for a local ROM solve result."""
-    cluster = getattr(self, 'cluster', self.metadata.get('cluster', None))
-    t_rom = getattr(self, 't_rom', self.metadata.get('t_rom', None))
 
-    if cluster is not None:
-        print(f"  Cluster:    {cluster}")
-    print(f"  Amplitude:  {self.amplitude}")
-    print(f"  Converged:  {self.converged}")
-    print(f"  Iterations: {self.iterations}")
-    if t_rom is not None:
-        print(f"  ROM time:   {t_rom:.3f}s")
+# =============================================================================
+# ROM vs FOM comparison
+# =============================================================================
 
-
-def _as_local_rom_solution(
-    solution: ROMSolution,
-    *,
-    cluster: int,
-    reconstructed,
-    t_rom: float,
-    w_rom=None,
-    callback_data=None,
-) -> ROMSolution:
-    """Attach local-ROM solve metadata to a ROMSolution instance.
-
-    This keeps the public return type as ROMSolution while preserving the
-    old ROMSolveResult-style attributes used by local-ROM workflows.
-    Existing code that consumes plain ROMSolution fields continues to work
-    because the core coefficient/convergence fields are unchanged.
-    """
-    solution.cluster = cluster
-    solution.reconstructed = reconstructed
-    solution.t_rom = t_rom
-    solution.w_rom = w_rom
-    solution.callback_data = callback_data
-
-    # Backward-compatible aliases for code that previously consumed
-    # ROMSolveResult.u_coeffs / ROMSolveResult.p_coeffs.
-    solution.u_coeffs = solution.velocity_coeffs
-    solution.p_coeffs = solution.pressure_coeffs
-
-    # Backward-compatible alias for code that previously expected
-    # ROMSolveResult.solution to hold the nested ROMSolution.
-    solution.solution = solution
-
-    solution.metadata.update({
-        'cluster': cluster,
-        't_rom': t_rom,
-        'has_reconstruction': reconstructed is not None,
-        'has_internals': w_rom is not None or callback_data is not None,
-    })
-
-    return solution
-
-
-if not hasattr(ROMSolution, 'summary'):
-    ROMSolution.summary = _rom_solution_summary
-
-from nsrom.navier_stokes import ForceCoefficients
 @dataclass
 class ROMvsFOMComparison:
     """Errors and timings from comparing a ROM solve against a FOM solve."""
@@ -551,6 +738,11 @@ class ROMvsFOMComparison:
         print(f"  FOM lift:  {self.fom_forces.lift:.6f}")
         print(f"  ROM lift:  {self.rom_forces.lift:.6f}")
 
+
+# =============================================================================
+# Solve entry points
+# =============================================================================
+
 def solve_at_parameter(
     Re,
     amp,
@@ -562,51 +754,66 @@ def solve_at_parameter(
     M_u,
     M_p,
     use_deim,
-    cluster_forced = None,
-):
+    cluster_forced=None,
+    return_internals: bool = False,
+    verbose: bool = True,
+) -> LocalROMResult:
     """
-    Solve the local ROM at a single parameter point.
+    Solve the local ROM at a single (Re, amp).
 
-    Selects a cluster in parameter space, projects the initial guess onto
-    that cluster's reduced basis, runs the ROM solver (with DEIM if
-    enabled), and reconstructs the full-field solution.
+    Selects a cluster (parameter box + solution-space distance, unless
+    forced), projects the initial guess onto that cluster's reduced
+    basis, runs the ROM solver (with DEIM if enabled), and reconstructs
+    the full-field solution.
+
+    Parameters
+    ----------
+    cluster_forced : int or None
+        If provided, bypass cluster selection and use this cluster.
+    return_internals : bool, default False
+        If True, the returned LocalROMResult also carries the Firedrake
+        internals (w_rom, callback_data) for post-solve operations such
+        as the bifurcation indicator.
+    verbose : bool, default True
+        Pass False inside continuation/sweep loops to silence per-call
+        cluster-selection and solver output.
 
     Returns
     -------
-    ROMSolution
-        The ROM solution augmented with local solve metadata:
-        cluster, reconstructed, t_rom, w_rom, callback_data, u_coeffs,
-        p_coeffs, and solution/self compatibility aliases.
+    LocalROMResult
     """
     problem.reynolds.assign(Re)
     problem.amplitude.assign(amp)
     nu = 1.0 / Re
+    k=select_the_cluster(clustering, Re, amp, initial_solution, M_u, cluster_forced = cluster_forced, verbose = verbose)
 
-    # k1, d1= select_cluster(clustering, Re, amp)
-    k1, d1 = select_cluster_by_box_then_centroid(clustering, Re ,amp)
-    k2, d2 = select_cluster_solution_space(clustering, initial_solution,M_u)
-    if cluster_forced is not None:
-        k = cluster_forced
-        print(f' Forced to use cluster :{cluster_forced}')
-    else:
-        k =select_cluster_closest(d1,d2)
-    velocity_dofs = initial_solution.velocity.dat.data_ro.flatten()
-    pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
-    u_coeffs, p_coeffs = project_to_rom_coefficients(
-        velocity_dofs, pressure_dofs,
-        operators[k],
-        amp=amp,
-        M_u=M_u,
-        M_p=M_p,
+    u_coeffs, p_coeffs=project_initial_solution(
+        initial_solution,
+        operators,
+        amp,
+        M_u,
+        M_p,
     )
+    # # ---- Project FOM initial guess onto cluster k's basis ----
+    # velocity_dofs = initial_solution.velocity.dat.data_ro.flatten()
+    # pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
+    # u_coeffs, p_coeffs = project_to_rom_coefficients(
+    #     velocity_dofs, pressure_dofs,
+    #     operators[k],
+    #     amp=amp,
+    #     M_u=M_u,
+    #     M_p=M_p,
+    # )
 
+    # ---- DEIM submesh (if needed) ----
     deim_ops_k   = deim_ops_dict[k]
     submesh_deim = None
     if use_deim and deim_ops_k is not None:
         submesh_deim = SubMeshDEIM(problem.velocity_space, deim_ops_k)
 
+    # ---- Solve ----
     t0 = time.perf_counter()
-    solution = solve_rom(
+    rom_output = solve_rom(
         operators=operators[k],
         nu=nu,
         amp=amp,
@@ -615,20 +822,29 @@ def solve_at_parameter(
         u_initial_guess=u_coeffs,
         p_initial_guess=p_coeffs,
         submesh_deim=submesh_deim,
+        return_internals=return_internals,
+        verbose=verbose,
     )
-
     t_rom = time.perf_counter() - t0
 
+    if return_internals:
+        solution, w_rom, callback_data = rom_output
+    else:
+        solution = rom_output
+        w_rom = None
+        callback_data = None
+
+    # ---- Reconstruct full-order solution ----
     reconstructed = reconstruct_solution(solution, operators[k], problem, amp=amp)
 
-    return _as_local_rom_solution(
+    return _make_local_result(
         solution,
         cluster=k,
         reconstructed=reconstructed,
         t_rom=t_rom,
+        w_rom=w_rom,
+        callback_data=callback_data,
     )
-
-
 
 
 def solve_at_parameter_with_internals(
@@ -642,75 +858,30 @@ def solve_at_parameter_with_internals(
     M_u,
     M_p,
     use_deim,
-):
+    cluster_forced=None,
+    verbose: bool = True,
+) -> LocalROMResult:
     """
-    Solve the local ROM at a single parameter point.
+    Deprecated. Prefer ``solve_at_parameter(..., return_internals=True)``.
 
-    Selects a cluster in parameter space, projects the initial guess onto
-    that cluster's reduced basis, runs the ROM solver (with DEIM if
-    enabled), and reconstructs the full-field solution.
-
-    Returns
-    -------
-    ROMSolution
-        The ROM solution augmented with local solve metadata and internals:
-        cluster, reconstructed, t_rom, w_rom, callback_data, u_coeffs,
-        p_coeffs, and solution/self compatibility aliases.
+    Kept as a thin shim while call sites migrate.
     """
-    problem.reynolds.assign(Re)
-    problem.amplitude.assign(amp)
-    nu = 1.0 / Re
-
-    k1, d1= select_cluster(clustering, Re, amp)
-    k2, d2 = select_cluster_solution_space(clustering, initial_solution,M_u)
-    k =select_cluster_closest(d1,d2)
-    velocity_dofs = initial_solution.velocity.dat.data_ro.flatten()
-    pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
-    u_coeffs, p_coeffs = project_to_rom_coefficients(
-        velocity_dofs, pressure_dofs,
-        operators[k],
-        amp=amp,
-        M_u=M_u,
-        M_p=M_p,
+    return solve_at_parameter(
+        Re, amp, clustering, operators, deim_ops_dict, problem,
+        initial_solution, M_u, M_p, use_deim,
+        cluster_forced=cluster_forced,
+        return_internals=True,
+        verbose=verbose,
     )
 
-    deim_ops_k   = deim_ops_dict[k]
-    submesh_deim = None
-    if use_deim and deim_ops_k is not None:
-        submesh_deim = SubMeshDEIM(problem.velocity_space, deim_ops_k)
-
-    t0 = time.perf_counter()
-
-    solution, w_rom, callback_data = solve_rom_with_internals(
-        operators=operators[k],
-        nu=nu,
-        amp=amp,
-        problem=problem,
-        deim_ops=deim_ops_k,
-        u_initial_guess=u_coeffs,
-        p_initial_guess=p_coeffs,
-        submesh_deim=submesh_deim,
-    )
-    t_rom = time.perf_counter() - t0
-
-    reconstructed = reconstruct_solution(solution, operators[k], problem, amp=amp)
-
-    return _as_local_rom_solution(
-        solution,
-        cluster=k,
-        reconstructed=reconstructed,
-        t_rom=t_rom,
-        w_rom=w_rom,
-        callback_data=callback_data,
-    )
 
 def compare_rom_vs_fom(
-    rom_result,
+    rom_result: LocalROMResult,
     problem,
     initial_solution,
     M_u,
     M_p,
-):
+) -> ROMvsFOMComparison:
     """
     Solve the FOM at the current problem state and compare against the
     reconstructed ROM solution.
@@ -719,12 +890,8 @@ def compare_rom_vs_fom(
     set (typically by a preceding ``solve_at_parameter`` call). Returns
     relative errors in the velocity inner-product norm and the pressure
     L2 norm, plus FOM timing and speedup.
-
-    Returns
-    -------
-    ROMvsFOMComparison
     """
-    from nsrom.navier_stokes import solve_steady_navier_stokes, compute_forces, ForceCoefficients
+    from nsrom.navier_stokes import solve_steady_navier_stokes, compute_forces
 
     t0 = time.perf_counter()
     hf_solution = solve_steady_navier_stokes(problem, initial_solution.solution)
@@ -741,8 +908,8 @@ def compare_rom_vs_fom(
     u_err = norm_M(u_fom - u_rom_dofs, M_u) / norm_M(u_fom, M_u)
     p_err = norm_M(p_fom - p_rom_dofs, M_p) / norm_M(p_fom, M_p)
 
-    fom_forces = compute_forces(hf_solution,problem)
-    rom_forces = compute_forces(rom_result.reconstructed,problem)
+    fom_forces = compute_forces(hf_solution, problem)
+    rom_forces = compute_forces(rom_result.reconstructed, problem)
 
     return ROMvsFOMComparison(
         u_err=u_err,
@@ -750,6 +917,473 @@ def compare_rom_vs_fom(
         t_rom=rom_result.t_rom,
         t_fom=t_fom,
         speedup=t_fom / rom_result.t_rom,
-        rom_forces = rom_forces,
-        fom_forces = fom_forces,
+        rom_forces=rom_forces,
+        fom_forces=fom_forces,
     )
+
+
+
+
+def _apply_cb(change_of_basis, src, tgt, vec):
+    """
+    Return (Z_tgt^T M Z_src) @ vec using the precomputed CB_u blocks.
+
+    CB_u[(src, tgt)] = Z_tgt^T M Z_src.  On the diagonal Z^T M Z = I, so
+    no block is stored and the vector passes through unchanged.
+    """
+    if src == tgt:
+        return vec
+    return change_of_basis['CB_u'][(src, tgt)] @ vec
+
+
+def _nearest_centroid(clustering, candidates, Re, amp):
+    """Nearest parameter centroid among a subset of cluster indices."""
+    query = np.array([Re, amp])
+    centers = np.array([
+        clustering.parameter_centroid(k)
+        for k in range(clustering.n_clusters)
+    ])
+    scales = np.ptp(centers, axis=0)
+    scales[scales == 0] = 1.0
+    d = np.linalg.norm((centers - query) / scales, axis=1)
+    candidates = np.asarray(candidates)
+    return int(candidates[int(np.argmin(d[candidates]))])
+
+
+def select_cluster_predicted(
+    clustering,
+    a_cur,
+    k_cur,
+    a_old,
+    k_old,
+    *,
+    Re=None,
+    amp=None,
+    tau=0.8,
+    eps_tie=1e-2,
+    verbose=False,
+):
+    """
+    Best-approximation cluster selection on a secant-predicted state.
+
+    Predicts the next homogeneous velocity fluctuation by a secant
+    extrapolation of the last two solved reduced states,
+
+        u_pred = 2 Z_{k_cur} a_cur - Z_{k_old} a_old,
+
+    and selects the cluster whose POD space best represents it, i.e.
+    minimizes the M-orthogonal projection loss
+
+        loss_k = || u_pred - P_k u_pred ||_M^2 / || u_pred ||_M^2
+               = 1 - || Z_k^T M u_pred ||^2 / || u_pred ||_M^2.
+
+    Everything is evaluated in reduced coordinates via the precomputed
+    change-of-basis blocks CB_u[(i,k)] = Z_k^T M Z_i (identity on the
+    diagonal). No lifting enters: bases, centroids and reduced
+    coordinates all live in the homogeneous space, and for uniform
+    parameter stepping the lifting correction to the secant is zero.
+
+    Decision rule (weight-free, lexicographic):
+      1. rank clusters by projection loss;
+      2. hysteresis: leave the incumbent k_cur only if the best
+         cluster's loss is below tau * loss[k_cur];
+      3. tie-break among near-best clusters (within eps_tie of the
+         minimum loss) by preferring the incumbent, then the nearest
+         parameter centroid.
+
+    Note: if the last two states were in the same cluster, u_pred lies
+    in that cluster's span, loss[k_cur] = 0, and the rule stays put. The
+    cross-cluster question only opens up when a_cur and a_old were in
+    different clusters (i.e. you straddled a boundary).
+
+    Parameters
+    ----------
+    a_cur, k_cur : ndarray, int
+        Most recent solved reduced velocity coefficients and cluster.
+    a_old, k_old : ndarray, int
+        The solved state one step earlier.
+    Re, amp : float, optional
+        Only used for the centroid tie-break.
+    tau : float
+        Hysteresis ratio in (0, 1]. Lower = stickier.
+    eps_tie : float
+        Loss-fraction tolerance for declaring a near-tie.
+
+    Returns
+    -------
+    int
+        Selected cluster index.
+    """
+    cb = clustering.change_of_basis
+    if cb is None:
+        raise ValueError(
+            "select_cluster_predicted requires precompute_change_of_basis()."
+        )
+
+    K = clustering.n_clusters
+
+    # --- norm of the predicted state (loss-ratio denominator) ---
+    norm_cur_sq = float(a_cur @ a_cur)
+    norm_old_sq = float(a_old @ a_old)
+    # cross = a_cur^T (Z_{k_cur}^T M Z_{k_old}) a_old
+    cross = float(a_cur @ _apply_cb(cb, k_old, k_cur, a_old))
+    norm_pred_sq = 4.0 * norm_cur_sq - 4.0 * cross + norm_old_sq
+    norm_pred_sq = max(norm_pred_sq, 1e-30)
+
+    # --- projection loss per cluster ---
+    loss = np.empty(K)
+    for k in range(K):
+        b_k = 2.0 * _apply_cb(cb, k_cur, k, a_cur) - _apply_cb(cb, k_old, k, a_old)
+        capture_k = float(b_k @ b_k)
+        loss[k] = (norm_pred_sq - capture_k) / norm_pred_sq
+
+    loss = np.clip(loss, 0.0, 1.0)
+
+    k_best = int(np.argmin(loss))
+    for i in range(K):
+        print(f' Loss Cluster {i} : {loss[i]} {'<- ' if i == k_best else ''}')
+
+    # --- hysteresis + lexicographic tie-break ---
+    if loss[k_best] < tau * loss[k_cur]:
+        near = np.where(loss <= loss[k_best] + eps_tie)[0]
+        if k_cur in near:
+            chosen = int(k_cur)
+        elif Re is not None and amp is not None:
+            chosen = _nearest_centroid(clustering, near, Re, amp)
+        else:
+            chosen = int(k_best)
+    else:
+        chosen = int(k_cur)
+
+    if verbose:
+        print(f"  Predicted-state selection (incumbent k={k_cur}):")
+        for k in range(K):
+            mark = " ←" if k == chosen else (" *" if k == k_best else "")
+            print(f"    Cluster {k}: loss={loss[k]:.4e}{mark}")
+        if chosen == k_cur and k_best != k_cur:
+            print(f"    (held incumbent k={k_cur} by hysteresis; "
+                  f"best was k={k_best}, loss={loss[k_best]:.4e})")
+
+    return chosen
+
+def accept_switch_by_projection(
+    clustering,
+    a_cur,
+    k_cur,
+    a_old,
+    k_old,
+    k_candidate,
+    *,
+    rel_proj_tol=1e-3,
+    verbose=False,
+):
+    cb = clustering.change_of_basis
+    if cb is None:
+        raise ValueError("Requires precompute_change_of_basis().")
+
+    if k_candidate == k_cur:
+        return k_cur
+
+    a_cur = np.asarray(a_cur, dtype=float)
+    a_old = np.asarray(a_old, dtype=float)
+
+    # Norm of secant-predicted state:
+    # u_pred = 2 Z_cur a_cur - Z_old a_old
+    norm_cur_sq = float(a_cur @ a_cur)
+    norm_old_sq = float(a_old @ a_old)
+    cross = float(a_cur @ _apply_cb(cb, k_old, k_cur, a_old))
+
+    norm_pred_sq = (
+        4.0 * norm_cur_sq
+        - 4.0 * cross
+        + norm_old_sq
+    )
+    norm_pred_sq = max(norm_pred_sq, 1e-30)
+
+    # Projection onto candidate cluster
+    b = (
+        2.0 * _apply_cb(cb, k_cur, k_candidate, a_cur)
+        -     _apply_cb(cb, k_old, k_candidate, a_old)
+    )
+
+    capture = float(b @ b)
+    rel_loss = max(0.0, min(1.0, (norm_pred_sq - capture) / norm_pred_sq))
+
+    if verbose:
+        print(
+            f"  Switch check {k_cur} -> {k_candidate}: "
+            f"rel_proj_loss={rel_loss:.3e}, tol={rel_proj_tol:.3e}"
+        )
+
+    if rel_loss < rel_proj_tol:
+        return int(k_candidate)
+
+    return int(k_cur)
+
+# =============================================================================
+# Diagnostics
+# =============================================================================
+# Relies on `np` and `_apply_cb`, both already defined in local_rom.py.
+# Does NO solving: reduced distance and projection loss are cheap reduced
+# quantities computed here; the eigenvalue `mu` (and optional convergence
+# info) must be computed by the caller (the sweep force-solves each cluster)
+# and passed in.
+
+def diagnose_clusters(
+    clustering,
+    a_cur,
+    k_cur,
+    *,
+    a_old=None,
+    k_old=None,
+    mu=None,
+    converged=None,
+    iterations=None,
+    Re=None,
+    amp=None,
+    verbose=True,
+):
+    """
+    Print, per cluster:
+      1. reduced solution-space distance ||Z_{k_cur} a_cur - c_k||_M
+         (needs precompute_fast_selection);
+      2. projection loss onto cluster k's basis, current-state and
+         (if a_old/k_old given) secant-predicted
+         (needs precompute_change_of_basis);
+      3. the reduced eigenvalue mu_k, if the caller passes it in.
+
+    Parameters
+    ----------
+    a_cur, k_cur : current reduced velocity coeffs and their cluster.
+    a_old, k_old : optional one-step-back state -> adds the predicted column.
+    mu, converged, iterations : optional length-K arrays from the caller's
+        per-cluster solves; displayed only, never computed here.
+    Re, amp : optional, header only.
+
+    Returns
+    -------
+    dict with 'reduced_dist', 'proj_loss_cur', 'proj_loss_pred' (length-K),
+    echoing back any 'mu'/'converged'/'iterations' passed in.
+    """
+    K = clustering.n_clusters
+    a_cur = np.asarray(a_cur, dtype=float)
+
+    reduced_dist   = np.full(K, np.nan)
+    proj_loss_cur  = np.full(K, np.nan)
+    proj_loss_pred = np.full(K, np.nan)
+
+    # 1. reduced solution-space distance to each centroid (whitened global-POD)
+    fs = getattr(clustering, 'fast_selection', None)
+    if fs is not None:
+        reduced_dist = _whitened_pod_distances(clustering, a_cur, k_cur)
+    elif verbose:
+        print("  [diag] fast_selection not set -> skipping reduced distance.")
+
+    # 2. projection loss onto each cluster basis
+    cb = getattr(clustering, 'change_of_basis', None)
+    if cb is not None:
+        norm_cur_sq = max(float(a_cur @ a_cur), 1e-30)
+        for k in range(K):
+            b = _apply_cb(cb, k_cur, k, a_cur)
+            proj_loss_cur[k] = max(0.0, min(1.0, 1.0 - float(b @ b) / norm_cur_sq))
+        if a_old is not None and k_old is not None:
+            a_old = np.asarray(a_old, dtype=float)
+            norm_old_sq = float(a_old @ a_old)
+            cross = float(a_cur @ _apply_cb(cb, k_old, k_cur, a_old))
+            norm_pred_sq = max(4.0 * norm_cur_sq - 4.0 * cross + norm_old_sq, 1e-30)
+            for k in range(K):
+                b = 2.0 * _apply_cb(cb, k_cur, k, a_cur) - _apply_cb(cb, k_old, k, a_old)
+                proj_loss_pred[k] = max(0.0, min(1.0, (norm_pred_sq - float(b @ b)) / norm_pred_sq))
+    elif verbose:
+        print("  [diag] change_of_basis not set -> skipping projection loss.")
+
+    out = {
+        'reduced_dist':   reduced_dist,
+        'proj_loss_cur':  proj_loss_cur,
+        'proj_loss_pred': proj_loss_pred,
+        'mu':             None if mu is None else np.asarray(mu, dtype=float),
+        'converged':      converged,
+        'iterations':     iterations,
+    }
+
+    if verbose:
+        have_pred = a_old is not None and k_old is not None
+        have_mu   = mu is not None
+
+        def _argmin_nan(x):
+            return int(np.nanargmin(x)) if not np.all(np.isnan(x)) else -1
+
+        best_dist = _argmin_nan(reduced_dist)
+        best_cur  = _argmin_nan(proj_loss_cur)
+        best_pred = _argmin_nan(proj_loss_pred) if have_pred else -1
+
+        loc = f"  (Re={Re}, amp={amp})" if (Re is not None and amp is not None) else ""
+        print(f"\nCluster diagnostics{loc}  incumbent k_cur={k_cur}")
+        hdr = f"  {'k':>2} | {'red_dist':>10} | {'proj_loss':>11}"
+        if have_pred:
+            hdr += f" | {'proj_pred':>11}"
+        if have_mu:
+            hdr += f" | {'mu':>12} | {'conv':>4} | {'iters':>5}"
+        print(hdr)
+        print("  " + "-" * (len(hdr) - 2))
+        for k in range(K):
+            row = (f"  {k:>2} | {reduced_dist[k]:>10.4f}"
+                   f"{'*' if k == best_dist else ' '}"
+                   f"| {proj_loss_cur[k]:>10.3e}"
+                   f"{'*' if k == best_cur else ' '}")
+            if have_pred:
+                row += (f"| {proj_loss_pred[k]:>10.3e}"
+                        f"{'*' if k == best_pred else ' '}")
+            if have_mu:
+                cval = converged[k] if converged is not None else None
+                cstr = ('yes' if cval else 'no') if cval is not None else '-'
+                istr = f"{iterations[k]}" if iterations is not None else '-'
+                row += f"| {out['mu'][k]:>12.4e} | {cstr:>4} | {istr:>5}"
+            row += "  <- incumbent" if k == k_cur else ""
+            print(row)
+        print("  (* = best in that column)\n")
+
+    return out
+
+def select_cluster_reduced_hysteresis(clustering, a_prev, k_prev, tau=0.8, verbose=False):
+    K = clustering.n_clusters
+    d = _whitened_pod_distances(clustering, a_prev, k_prev)   # whitened global-POD
+    k_best = int(np.argmin(d))
+    chosen = k_best if d[k_best] < tau * d[k_prev] else k_prev   # switch only if clearly closer
+    if verbose:
+        for k in range(K):
+            mark = " <-" if k == chosen else (" *" if k == k_best else "")
+            print(f"   cluster {k}: red_dist={d[k]:.4f}{mark}")
+
+
+    return chosen
+
+
+def select_cluster_reduced_projection(clustering, a_prev, k_prev, a_old=None, k_old=None, tau=0.8, verbose=False):
+    K = clustering.n_clusters
+    proj_loss_cur  = np.full(K, np.nan)
+    proj_loss_pred = np.full(K, np.nan)
+    d = _whitened_pod_distances(clustering, a_prev, k_prev)   # whitened global-POD
+    k_best = int(np.argmin(d))
+    chosen = k_best if d[k_best] < tau * d[k_prev] else k_prev   # switch only if clearly closer
+    if verbose:
+        for k in range(K):
+            mark = " <-" if k == chosen else (" *" if k == k_best else "")
+            print(f"   cluster {k}: red_dist={d[k]:.4f}{mark}")
+
+    # 2. projection loss onto each cluster basis
+    cb = getattr(clustering, 'change_of_basis', None)
+    if cb is not None:
+        norm_cur_sq = max(float(a_prev @ a_prev), 1e-30)
+        for k in range(K):
+            b = _apply_cb(cb, k_prev, k, a_prev)
+            proj_loss_cur[k] = max(0.0, min(1.0, 1.0 - float(b @ b) / norm_cur_sq))
+        if a_old is not None and k_old is not None:
+            a_old = np.asarray(a_old, dtype=float)
+            norm_old_sq = float(a_old @ a_old)
+            cross = float(a_prev @ _apply_cb(cb, k_old, k_prev, a_old))
+            norm_pred_sq = max(4.0 * norm_cur_sq - 4.0 * cross + norm_old_sq, 1e-30)
+            for k in range(K):
+                b = 2.0 * _apply_cb(cb, k_prev, k, a_prev) - _apply_cb(cb, k_old, k, a_old)
+                proj_loss_pred[k] = max(0.0, min(1.0, (norm_pred_sq - float(b @ b)) / norm_pred_sq))
+    if verbose:
+        for k in range(K):
+            print(f"   cluster {k}: PROJECTION DISTANCE CURRENT   ={proj_loss_cur[k]:.4f}")
+            print(f"   cluster {k}: PROJECTION DISTANCE PROJECTED ={proj_loss_pred[k]:.4f}")
+
+
+    return chosen
+
+
+def select_cluster_reduced_projection(clustering, a_prev, k_prev, a_old=None, k_old=None,
+                                      tau=0.8, proj_tol=0.01, verbose=False):
+    K  = clustering.n_clusters
+    cb = getattr(clustering, 'change_of_basis', None)
+
+    # 1. proposer: whitened global-POD distance to each centroid
+    d = _whitened_pod_distances(clustering, a_prev, k_prev)
+
+    # 2. validator: projection loss of current & secant-predicted state onto each basis
+    proj_loss_cur  = np.full(K, np.nan)
+    proj_loss_pred = np.full(K, np.nan)
+    if cb is not None:
+        norm_cur_sq = max(float(a_prev @ a_prev), 1e-30)
+        for k in range(K):
+            b = _apply_cb(cb, k_prev, k, a_prev)
+            proj_loss_cur[k] = max(0.0, min(1.0, 1.0 - float(b @ b) / norm_cur_sq))
+        if a_old is not None and k_old is not None:
+            a_old = np.asarray(a_old, dtype=float)
+            a_pred = 2.0 * a_prev - _apply_cb(cb, k_old, k_prev, a_old)   # secant, in k_prev frame
+            norm_pred_sq = max(float(a_pred @ a_pred), 1e-30)
+            for k in range(K):
+                b = _apply_cb(cb, k_prev, k, a_pred)
+                proj_loss_pred[k] = max(0.0, min(1.0, 1.0 - float(b @ b) / norm_pred_sq))
+
+    # 3. veto: a NON-incumbent basis that cannot represent the (predicted) state is ineligible.
+    #    The incumbent is never vetoed -- its self-projection is 0 by construction, and it
+    #    stays as the guaranteed fallback (hysteresis holds us there unless clearly beaten).
+    veto = proj_loss_pred if (a_old is not None and k_old is not None) else proj_loss_cur
+    d_eff = d.copy()
+    if cb is not None:
+        for k in range(K):
+            if k != k_prev and np.isfinite(veto[k]) and veto[k] > proj_tol:
+                d_eff[k] = np.inf
+
+    # 4. propose nearest ELIGIBLE centroid, with hysteresis toward the incumbent
+    k_best = int(np.argmin(d_eff))
+    chosen = k_best if d_eff[k_best] < tau * d_eff[k_prev] else k_prev
+
+    if verbose:
+        for k in range(K):
+            mark  = " <-" if k == chosen else (" *" if k == k_best else "")
+            extra = " VETO" if np.isinf(d_eff[k]) else ""
+            print(f"   cluster {k}: red_dist={d[k]:.4f} "
+                  f"proj_cur={proj_loss_cur[k]:.4f} proj_pred={proj_loss_pred[k]:.4f}{mark}{extra}")
+    return chosen
+
+
+def classify_state_for_seed(clustering, a_state, k_source, proj_tol=0.01, verbose=False):
+    """
+    Classify a freshly-spawned (kicked) state -- given as reduced velocity coeffs
+    a_state expressed in cluster k_source's basis -- onto the cluster whose basis
+    best represents it.
+
+    The source frame is EXCLUDED from candidacy: projecting a_state from k_source
+    back onto k_source is the identity (loss 0), a tautology that carries no
+    information (this is the round-trip degeneracy). Among the remaining clusters
+    the projection loss is an honest subspace-overlap measure. We keep the
+    clusters that represent the state within proj_tol and take the nearest in the
+    whitened-POD metric -- the same proposer/validator rule as the sweep selector,
+    minus the incumbent (there is no prior branch identity to preserve at a birth).
+    """
+    K  = clustering.n_clusters
+    cb = getattr(clustering, 'change_of_basis', None)
+    if cb is None:
+        raise RuntimeError("change_of_basis not precomputed; needed for seed classification")
+
+    a_state = np.asarray(a_state, dtype=float)
+    norm_sq = max(float(a_state @ a_state), 1e-30)
+
+    d = _whitened_pod_distances(clustering, a_state, k_source)        # proposer
+
+    proj_loss = np.full(K, np.inf)
+    for k in range(K):
+        if k == k_source:
+            continue                       # exclude source: self-projection is tautological (0)
+        b = _apply_cb(cb, k_source, k, a_state)
+        proj_loss[k] = max(0.0, min(1.0, 1.0 - float(b @ b) / norm_sq))
+
+    candidates = [k for k in range(K) if k != k_source]
+    eligible   = [k for k in candidates if proj_loss[k] <= proj_tol]
+    if eligible:
+        k_seed = min(eligible, key=lambda k: d[k])            # nearest well-representing cluster
+    else:
+        k_seed = min(candidates, key=lambda k: proj_loss[k])  # fallback: best representation
+
+    if verbose:
+        print(f"  [seed] kicked state framed in cluster {k_source} -> candidates:")
+        for k in candidates:
+            tag  = " <-" if k == k_seed else ""
+            flag = " (veto)" if proj_loss[k] > proj_tol else ""
+            print(f"         cluster {k}: dist={d[k]:.4f} proj={proj_loss[k]:.4f}{flag}{tag}")
+    return k_seed

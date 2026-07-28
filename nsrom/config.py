@@ -72,10 +72,12 @@ class LocalROMConfig:
 
     # --- Mode flags ---
     use_deim: bool
+    use_tensor: bool
     compute_affine_convection: bool
 
     # --- DEIM ---
-    deim_energy_tol: float
+    deim_energy_tol_F: float
+    deim_energy_tol_J: float
     m_F_max: int
     m_J_max: int
     n_modes_F: Optional[int]

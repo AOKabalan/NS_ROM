@@ -29,6 +29,40 @@ def csr_flat_to_coords(flat_indices, indptr, col_indices):
     return np.array(rows), np.array(cols)
 
 
+def dofs_to_nnz(dofs, indptr, col_indices, col_filter=None):
+    """
+    Map residual (row) DOF indices to the flat CSR data indices of their
+    Jacobian rows. This is the inverse-direction translation of
+    csr_flat_to_coords: one DOF -> many nnz entries (its whole row stencil).
+
+    Args:
+        dofs: iterable of row DOF indices
+        indptr: CSR indptr of the Jacobian sparsity pattern
+        col_indices: CSR column indices of the Jacobian sparsity pattern
+        col_filter: optional array of DOF indices; if given, keep only nnz
+            entries (i, j) whose column j is in this set. Filtering to the
+            residual sample set keeps the count modest and samples exactly
+            the sub-block coupling sampled equations to sampled unknowns.
+
+    Returns:
+        (n_entries,) int64 array of flat CSR data indices (unsorted, may
+        contain duplicates across rows only if dofs has duplicates).
+    """
+    dofs = np.asarray(dofs, dtype=np.int64)
+    if col_filter is not None:
+        col_filter = np.unique(np.asarray(col_filter, dtype=np.int64))
+    chunks = []
+    for i in dofs:
+        row_nnz = np.arange(indptr[i], indptr[i + 1], dtype=np.int64)
+        if col_filter is not None:
+            keep = np.isin(col_indices[row_nnz], col_filter, assume_unique=False)
+            row_nnz = row_nnz[keep]
+        chunks.append(row_nnz)
+    if not chunks:
+        return np.array([], dtype=np.int64)
+    return np.concatenate(chunks)
+
+
 @dataclass
 class DEIMOnlineOperators:
     """
@@ -125,9 +159,18 @@ class DEIMOnlineOperators:
             'm_J': self.m_J,
             'n_rom_modes': self.r,
         }
+        # Optional extended metadata (mode counts vs sample counts, flags)
+        extra_meta = {
+            f'meta_{k}': self.metadata[k]
+            for k in ('n_modes_F', 'n_modes_J', 'n_deim_points_F',
+                      'n_mdeim_points_J', 'oversample_residual',
+                      'oversample_jacobian')
+            if k in self.metadata
+        }
 
         np.savez_compressed(
             path,
+            **extra_meta,
             # Convective operator data
             indices_F=self.indices_F,
             indices_F_rows=self.indices_F_rows,
@@ -168,6 +211,12 @@ class DEIMOnlineOperators:
             'm_J': int(data['meta_m_J']),
             'n_rom_modes': int(data['meta_n_rom_modes']),
         }
+        for k in ('n_modes_F', 'n_modes_J', 'n_deim_points_F',
+                  'n_mdeim_points_J', 'oversample_residual',
+                  'oversample_jacobian'):
+            key = f'meta_{k}'
+            if key in data.files:
+                metadata[k] = data[key].item()
 
         return cls(
             indices_F=data['indices_F'],
@@ -203,7 +252,7 @@ def load_ops_metadata(path: str | Path) -> dict:
     }
 
 
-def build_deim_online_operators(
+def build_deim_online_operators_old(
     basis_path: str | Path,
     V: np.ndarray,
     m_F: int,
@@ -433,3 +482,214 @@ def build_deim_online_operators(
 #         J_r_modes=J_r_modes,
 #         metadata=metadata,
 #     )
+
+
+def build_deim_online_operators(
+    basis_path,
+    V: np.ndarray,
+    m_F: int,
+    m_J: int,
+    oversample_residual: bool = False,
+    include_jacobian_cols: bool = False,
+    oversample_jacobian: bool = False,
+    jacobian_filter_cols: bool = False,
+) -> DEIMOnlineOperators:
+    """
+    Build online operators from saved DEIM basis, with optional oversampled
+    (least-squares) reconstruction of the residual and/or the Jacobian, so
+    that both operators are anchored on a shared point set.
+
+    Args:
+        basis_path: Path to saved DEIM basis (.npz)
+        V: (n_dofs, r) velocity POD basis (enriched with supremizers)
+        m_F: Number of DEIM modes for convective term
+        m_J: Number of MDEIM modes for Jacobian
+        oversample_residual: if True, sample the residual on the union of the
+            DEIM points and the MDEIM row/col DOFs, reconstruct by least squares.
+            if False, original square DEIM (exact reproduction of old behavior).
+        include_jacobian_cols: if True, add MDEIM column DOFs as well as rows to
+            the residual oversample set. Rows are the residual (test-function)
+            DOFs; cols are the trial DOFs the convective Jacobian reads. Both are
+            velocity DOFs in the convective region. Set False for rows-only.
+        oversample_jacobian: if True, extend the MDEIM sample set with the nnz
+            entries of the Jacobian rows belonging to the residual DEIM points
+            (the symmetric direction: J is anchored where F is sampled), and
+            reconstruct the Jacobian coefficients by least squares. The mode
+            count m_J and J_r_modes are unchanged; only the sample set grows.
+        jacobian_filter_cols: if True (and oversample_jacobian), keep only nnz
+            entries (i, j) whose column j lies in the residual sample set, i.e.
+            sample the sub-block coupling sampled equations to sampled unknowns.
+            If False, take the full row stencils (more entries, denser fit).
+    """
+    basis = load_basis(basis_path)
+    n_dofs = basis['n_dofs']
+    r = V.shape[1]
+
+    print(f"Building DEIM online operators:")
+    print(f"  ROM modes (r): {r}")
+
+    max_m_F = basis['modes_F'].shape[1]
+    max_m_J = basis['modes_J'].shape[1]
+    print(f"  Available F modes: {max_m_F}, J modes: {max_m_J}")
+    print(f"  Requested: m_F={m_F}, m_J={m_J}")
+
+    # --- effective-rank / cap guards (unchanged from original) ---
+    U_F_candidate = basis['modes_F'][:, :min(m_F, max_m_F)]
+    effective_m_F = int(np.sum(np.linalg.norm(U_F_candidate, axis=0) > 1e-10))
+    if effective_m_F < m_F:
+        print(f"  ⚠ F modes: only {effective_m_F} non-zero (requested {m_F})")
+        m_F = effective_m_F
+    U_J_candidate = basis['modes_J'][:, :min(m_J, max_m_J)]
+    effective_m_J = int(np.sum(np.linalg.norm(U_J_candidate, axis=0) > 1e-10))
+    if effective_m_J < m_J:
+        print(f"  ⚠ J modes: only {effective_m_J} non-zero (requested {m_J})")
+        m_J = effective_m_J
+    m_F = max(1, min(m_F, max_m_F))
+    m_J = max(1, min(m_J, max_m_J))
+    print(f"  Final: m_F={m_F}, m_J={m_J}")
+
+    indptr = basis['indptr']
+    col_indices = basis['col_indices']
+
+    # =====================================================================
+    # Greedy selections FIRST (both), so the residual oversample set can use
+    # the MDEIM row/col DOFs.
+    # =====================================================================
+    U_F = basis['modes_F'][:, :m_F]
+    deim_pts_F = deim_algorithm(U_F)                 # (m_F,) residual VECTOR DOFs
+
+    U_J = basis['modes_J'][:, :m_J]
+    mdeim_pts_J = deim_algorithm(U_J)                # (m_J,) Jacobian CSR-data idx
+    indices_J_rows, indices_J_cols = csr_flat_to_coords(
+        mdeim_pts_J, indptr, col_indices)           # DOF indices in [0, n_dofs)
+
+    # =====================================================================
+    # Convective (residual) operator
+    # =====================================================================
+    print(f"\n  Building convective operators...")
+
+    if oversample_residual:
+        extra = indices_J_rows
+        if include_jacobian_cols:
+            extra = np.concatenate([indices_J_rows, indices_J_cols])
+        # union of residual DEIM points and MDEIM row/(col) DOFs, all in
+        # residual-vector index space; sorted+unique for a clean sample set.
+        oversample_pts = np.unique(
+            np.concatenate([deim_pts_F, extra]).astype(np.int64)
+        )
+        indices_F = oversample_pts
+        print(f"    Oversampled residual: {len(deim_pts_F)} DEIM points "
+              f"+ MDEIM {'rows+cols' if include_jacobian_cols else 'rows'} "
+              f"-> {len(indices_F)} union points")
+    else:
+        indices_F = deim_pts_F
+        print(f"    Square DEIM: {len(indices_F)} points")
+
+    # Vestigial for the residual path (SubMeshDEIM uses only indices_F). Kept for
+    # struct/shape compatibility with save/load. For the residual, the "row" IS
+    # the DOF; cols are not meaningful for a vector sample.
+    indices_F_rows = indices_F.copy()
+    indices_F_cols = np.zeros_like(indices_F)
+
+    U_F_P = U_F[indices_F, :]                         # (n_over, m_F), tall if oversampled
+    cond_F = np.linalg.cond(U_F_P)
+    print(f"    Sample matrix U_F_P shape: {U_F_P.shape}, cond: {cond_F:.2e}")
+
+    if oversample_residual or U_F_P.shape[0] != U_F_P.shape[1] or cond_F > 1e12:
+        # least-squares reconstruction (required when tall; safe when square)
+        U_F_P_inv = np.linalg.pinv(U_F_P)            # (m_F, n_over)
+        if oversample_residual:
+            # report the least-squares fit quality of the basis onto the points
+            recon = U_F_P @ (U_F_P_inv @ U_F_P)
+            print(f"    LSQ self-consistency ||U_F_P - U_F_P (P^+ P)||/||U_F_P|| "
+                  f"= {np.linalg.norm(U_F_P - recon)/np.linalg.norm(U_F_P):.2e}")
+    else:
+        U_F_P_inv = np.linalg.inv(U_F_P)
+
+    # associativity makes this identical to (V.T @ U_F) @ U_F_P_inv;
+    # shape is (r, n_over)
+    V_T_B_F = V.T @ (U_F @ U_F_P_inv)
+    print(f"    V_T_B_F shape: {V_T_B_F.shape}")
+
+    # =====================================================================
+    # Jacobian (MDEIM) operator -- optionally oversampled on the DEIM rows
+    # =====================================================================
+    print(f"\n  Building Jacobian operators...")
+
+    if oversample_jacobian:
+        # For each residual DEIM point i, add (a subset of) the nnz entries of
+        # Jacobian row i. Filtering columns to the residual sample set keeps
+        # the count modest and makes the two sample sets mutually consistent
+        # in one pass (rows are deim_pts_F ⊂ indices_F; cols ⊂ indices_F).
+        col_filter = indices_F if jacobian_filter_cols else None
+        extra_nnz = dofs_to_nnz(deim_pts_F, indptr, col_indices, col_filter)
+        indices_J = np.unique(
+            np.concatenate([mdeim_pts_J, extra_nnz]).astype(np.int64)
+        )
+        # Refresh coordinates for the expanded set: these feed the submesh
+        # construction, which must now cover the added rows' cell patches
+        # (already covered if the residual submesh includes deim_pts_F).
+        indices_J_rows, indices_J_cols = csr_flat_to_coords(
+            indices_J, indptr, col_indices)
+        print(f"    Oversampled Jacobian: {len(mdeim_pts_J)} MDEIM points "
+              f"+ {len(extra_nnz)} row-stencil entries "
+              f"({'col-filtered' if jacobian_filter_cols else 'full rows'}) "
+              f"-> {len(indices_J)} union points")
+    else:
+        indices_J = mdeim_pts_J
+        print(f"    Square MDEIM: {len(indices_J)} points")
+
+    U_J_P = U_J[indices_J, :]                        # (n_sample_J, m_J)
+    cond_J = np.linalg.cond(U_J_P)
+    print(f"    Sample matrix U_J_P shape: {U_J_P.shape}, cond: {cond_J:.2e}")
+    if oversample_jacobian or U_J_P.shape[0] != U_J_P.shape[1] or cond_J > 1e12:
+        # least-squares reconstruction (required when tall; safe when square)
+        U_J_P_inv = np.linalg.pinv(U_J_P)            # (m_J, n_sample_J)
+    else:
+        U_J_P_inv = np.linalg.inv(U_J_P)
+
+    J_r_modes = np.zeros((m_J, r, r))
+    J_k = sp.csr_matrix((np.empty(len(col_indices)), col_indices, indptr),
+                        shape=(n_dofs, n_dofs))          # pattern built ONCE
+    for k in range(m_J):
+        if (k + 1) % 20 == 0 or k == 0:
+            print(f"    Mode {k+1}/{m_J}")
+        J_k.data = np.ascontiguousarray(U_J[:, k])       # swap values only
+        J_r_modes[k] = V.T @ (J_k @ V)
+    # J_r_modes = np.zeros((m_J, r, r))
+    # for k in range(m_J):
+    #     if (k + 1) % 20 == 0 or k == 0:
+    #         print(f"    Mode {k+1}/{m_J}")
+    #     J_k = sp.csr_matrix(
+    #         (U_J[:, k], col_indices, indptr), shape=(n_dofs, n_dofs)
+    #     )
+    #     J_r_modes[k] = V.T @ (J_k @ V)
+    print(f"    J_r_modes shape: {J_r_modes.shape}")
+
+    metadata = {
+        'basis_path': str(basis_path),
+        # sample counts (what the online solver reads/assembles)
+        'm_F': int(len(indices_F)),
+        'm_J': int(len(indices_J)),
+        # mode counts (what convergence studies should sweep)
+        'n_modes_F': int(m_F),
+        'n_modes_J': int(U_J.shape[1]),
+        'n_deim_points_F': int(len(deim_pts_F)),
+        'n_mdeim_points_J': int(len(mdeim_pts_J)),
+        'n_rom_modes': int(r),
+        'oversample_residual': bool(oversample_residual),
+        'oversample_jacobian': bool(oversample_jacobian),
+    }
+
+    return DEIMOnlineOperators(
+        indices_F=indices_F,
+        indices_F_rows=indices_F_rows,
+        indices_F_cols=indices_F_cols,
+        V_T_B_F=V_T_B_F,
+        indices_J=indices_J,
+        indices_J_rows=indices_J_rows,
+        indices_J_cols=indices_J_cols,
+        U_J_P_inv=U_J_P_inv,
+        J_r_modes=J_r_modes,
+        metadata=metadata,
+    )

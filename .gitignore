@@ -20,6 +20,7 @@ newlygenerated_high*
 deim_basis.npz
 deim_ops.npz
 investigations/
+debug/
 
 # Firedrake outputs
 *.h5
@@ -45,3 +46,18 @@ eigen_testing.py
 
 #Documents
 *.pdf
+__pycache__/
+*.pyc
+venv*/
+.cache/
+
+# data & results
+*.npz
+*.npy
+*.csv
+results/
+figures/
+paper_figures/
+global/
+hyperstudy_ops/
+attic/
