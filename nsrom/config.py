@@ -4,14 +4,15 @@ Configuration for local ROM construction.
 All fields are required. The user must explicitly set every parameter so that
 no run depends on a hidden default.
 """
-from dataclasses import dataclass
-from typing import Optional, Tuple
 import json
 import os
-from dataclasses import asdict
+from dataclasses import dataclass, asdict
+from typing import Optional, Tuple, List
 
-from dataclasses import dataclass, field
-from typing import Tuple, List, Optional
+
+# Convection-evaluation strategies. Mirrors nsrom.rom.rom_solver.VALID_MODES;
+# duplicated here so config validation does not import Firedrake.
+VALID_MODES = ('exact', 'deim', 'tensor')
 
 
 @dataclass(kw_only=True)
@@ -23,7 +24,7 @@ class RunManifest:
     """
     # --- Inputs ---
     snapshot_dir       : str
-    deim_snapshot_dir  : Optional[str]   # None when use_deim is False
+    deim_snapshot_dir  : Optional[str]   # None unless cfg.mode == 'deim'
     lifting_dir        : str
     mesh_file          : str
     fom_checkpoint     : str
@@ -41,22 +42,6 @@ class RunManifest:
     amp_values : List[float]
 
 
-def save_run(cfg, manifest, path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    cfg_d = asdict(cfg)
-    cfg_d["boundary_markers"] = list(cfg_d["boundary_markers"])
-    man_d = asdict(manifest)
-    with open(path, "w") as f:
-        json.dump({"config": cfg_d, "manifest": man_d}, f, indent=2)
-
-
-def load_run(path):
-    with open(path) as f:
-        d = json.load(f)
-    cfg_d = d["config"]
-    cfg_d["boundary_markers"] = tuple(cfg_d["boundary_markers"])
-    return LocalROMConfig(**cfg_d), RunManifest(**d["manifest"])
-
 @dataclass(kw_only=True)
 class LocalROMConfig:
     # --- Clustering ---
@@ -70,9 +55,8 @@ class LocalROMConfig:
     n_supremizer_max: int
     boundary_markers: Tuple[int, ...]
 
-    # --- Mode flags ---
-    use_deim: bool
-    use_tensor: bool
+    # --- Convection evaluation ---
+    mode: str                          # 'exact' | 'deim' | 'tensor'
     compute_affine_convection: bool
 
     # --- DEIM ---
@@ -87,6 +71,60 @@ class LocalROMConfig:
     recompute_clustering: bool
     recompute_pod: bool
     recompute_deim: bool
+    recompute_tensor: bool
+
+    def __post_init__(self):
+        if self.mode not in VALID_MODES:
+            raise ValueError(
+                f"Unknown mode {self.mode!r}; expected one of {VALID_MODES}."
+            )
+        if self.mode == 'tensor' and not self.compute_affine_convection:
+            raise ValueError(
+                "mode='tensor' requires compute_affine_convection=True "
+                "(the tensor represents the pure quadratic term only)."
+            )
+
+    # Convenience predicates, so call sites read naturally without
+    # reintroducing the old boolean fields.
+    @property
+    def use_deim(self) -> bool:
+        return self.mode == 'deim'
+
+    @property
+    def use_tensor(self) -> bool:
+        return self.mode == 'tensor'
+
+
+# =============================================================================
+# PERSISTENCE
+# =============================================================================
+
+def _migrate_config_dict(d: dict) -> dict:
+    """
+    Upgrade a config dict written before `mode` replaced use_deim/use_tensor.
+
+    Legacy records carry the two booleans; new ones carry `mode`. Both are
+    accepted so old run.json files stay loadable.
+    """
+    d = dict(d)
+
+    if 'mode' not in d:
+        use_deim = d.pop('use_deim', False)
+        use_tensor = d.pop('use_tensor', False)
+        if use_deim and use_tensor:
+            raise ValueError(
+                "Legacy config has both use_deim and use_tensor set; "
+                "cannot infer mode. Edit the file and set mode= explicitly."
+            )
+        d['mode'] = 'tensor' if use_tensor else ('deim' if use_deim else 'exact')
+    else:
+        d.pop('use_deim', None)
+        d.pop('use_tensor', None)
+
+    d.setdefault('recompute_tensor', False)
+    d['boundary_markers'] = tuple(d['boundary_markers'])
+    return d
+
 
 def save_config(cfg, path):
     """Dump a LocalROMConfig to JSON."""
@@ -99,8 +137,25 @@ def save_config(cfg, path):
 
 
 def load_config(path):
-    """Load a LocalROMConfig from JSON."""
+    """Load a LocalROMConfig from JSON, migrating legacy records."""
     with open(path) as f:
         d = json.load(f)
-    d["boundary_markers"] = tuple(d["boundary_markers"])
-    return LocalROMConfig(**d)
+    return LocalROMConfig(**_migrate_config_dict(d))
+
+
+def save_run(cfg, manifest, path):
+    """Dump a (config, manifest) pair to JSON."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    cfg_d = asdict(cfg)
+    cfg_d["boundary_markers"] = list(cfg_d["boundary_markers"])
+    man_d = asdict(manifest)
+    with open(path, "w") as f:
+        json.dump({"config": cfg_d, "manifest": man_d}, f, indent=2)
+
+
+def load_run(path):
+    """Load a (config, manifest) pair from JSON, migrating legacy records."""
+    with open(path) as f:
+        d = json.load(f)
+    cfg = LocalROMConfig(**_migrate_config_dict(d["config"]))
+    return cfg, RunManifest(**d["manifest"])
