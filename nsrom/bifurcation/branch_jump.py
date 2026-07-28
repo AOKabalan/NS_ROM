@@ -276,95 +276,6 @@ def branch_jump_pitchfork(
             break
 
     return results
-def branch_jump_pitchfork_old(
-    problem,
-    sol_c,
-    eigvec_c,
-    Re_c,
-    *,
-    eps_values=(0.5, 1.0, 2.0),
-    amp_values=(1e-3, 3e-3, 1e-2, 3e-2, 1e-1),
-    perturb_pressure=False,
-    asymmetry_tol=1e-3,
-):
-
-    mode = vec_to_function(
-        eigvec_c,
-        problem.mixed_space,
-        name="pitchfork_eigenmode",
-    )
-
-    mode, raw_norm = normalize_velocity_mode(mode)
-
-    print("\n--- Branch jump setup ---")
-    print(f"  Re_c:                     {Re_c:.8f}")
-    print(f"  Raw eigenmode velocity L2: {raw_norm:.6e}")
-    print("  Mode normalized to ||nu_u||_L2 = 1")
-
-    results = []
-
-    for eps in eps_values:
-        Re_jump = float(Re_c + eps)
-
-        problem.reynolds.assign(Re_jump)
-        problem.amplitude.assign(float(sol_c.amplitude))
-
-        # Anchor at Re jump
-        sol_sym_jump = solve_steady_navier_stokes(problem, sol_c.solution)
-
-        print(f"\n--- Trying Re_jump = {Re_jump:.6f}  eps = {eps:.3e} ---")
-
-        for amp in amp_values:
-            for sign in (+1, -1):
-                print(f"  Trying sign={sign:+d}, amplitude={amp:.3e}")
-
-                w_guess = make_branch_jump_initial_guess(
-                    sol_sym_jump,
-                    mode,
-                    sign,
-                    amp,
-                    perturb_pressure=perturb_pressure,
-                )
-
-                try:
-                    sol_new = solve_steady_navier_stokes(problem, w_guess)
-                except Exception as e:
-                    print(f"    Newton failed: {e}")
-                    continue
-
-                scores = probe_asymmetry_score(sol_new)
-
-                broken = (
-                    scores["ux_symmetry_error"] > asymmetry_tol
-                    or scores["uy_symmetry_error"] > asymmetry_tol
-                )
-
-                print(
-                    "    converged | "
-                    f"ux_score={scores['ux_antisym_score']:+.3f}, "
-                    f"uy_score={scores['uy_antisym_score']:+.3f}, "
-                    f"broken={broken}"
-                )
-
-                if broken:
-                    results.append(
-                        {
-                            "solution": sol_new,
-                            "Re": Re_jump,
-                            "epsilon": eps,
-                            "amplitude": amp,
-                            "sign": sign,
-                            "scores": scores,
-                        }
-                    )
-
-        if len(results) >= 2:
-            signs = {r["sign"] for r in results}
-            if signs == {+1, -1}:
-                print("\n  Found both pitchfork branches.")
-                break
-
-    return results
 
 
 
@@ -484,6 +395,7 @@ def branch_jump_rom(
     problem,
     eps,
     sign,
+    mode,
     w_rom = None,
     callback = None,
     offset = 1,
@@ -497,7 +409,8 @@ def branch_jump_rom(
 
 
         w_rom = rom_res.w_rom
-        callback = rom_res.callback_data,
+        callback = rom_res.callback_data      # no trailing comma
+        # callback = rom_res.callback_data,
 
     indicator = compute_rom_indicator(
         w_rom, callback,
@@ -537,6 +450,7 @@ def branch_jump_rom(
         nu=1.0 / (Re+offset),
         amp=amp,
         problem=problem,
+        mode=mode,
         u_initial_guess=alpha_kicked,
         p_initial_guess=p_symm,
     )
@@ -551,10 +465,12 @@ def branch_jump_rom(
         sx = scores["ux_antisym_score"]
         sy = scores["uy_antisym_score"]
         forces = compute_forces(u_kicked,problem)
+        C_L = float(forces.lift)
         print(f'The lift coefficient: {forces.lift}')
 
     else:
         sx, sy = float("nan"), float("nan")
+        C_L = float("nan")
 
     return {
         "sol":            sol_kicked,
@@ -567,7 +483,7 @@ def branch_jump_rom(
         "sign":           int(sign),
         "mu_symm":        float(mu_symm),
         "nu_red":         nu_red,
-        "C_L":            float(forces.lift),
+        "C_L":            C_L,
         "asymmetry_x":    float(sx),
         "asymmetry_y":    float(sy),
     }
@@ -587,7 +503,7 @@ def compute_ift_slope(
     M_u,
     M_p,
     M_uu_red,
-    use_deim=False,
+    mode,
     n_eigenvalues=6,
     target=0.0,
 ):
@@ -596,12 +512,13 @@ def compute_ift_slope(
         dRe_c/damp ≈ -(∂μ/∂amp) / (∂μ/∂Re)
     evaluated near a (Re_0, amp_0) close to the bifurcation curve.
     """
+    from nsrom.bifurcation.detection import evaluate_rom_point
     common = dict(
         clustering=clustering, operators=operators,
         deim_ops_dict=deim_ops_dict, problem=problem,
         initial_solution=initial_solution,
         M_u=M_u, M_p=M_p, M_uu_red=M_uu_red,
-        use_deim=use_deim,
+        mode=mode,
         n_eigenvalues=n_eigenvalues, target=target,
     )
 
@@ -658,6 +575,8 @@ def in_sweep_branch_jump_rom(
     eps,
     sign,
     indicator,
+    *,
+    mode,
     offset = 1,
     enforce_eigvec_sign=True,
     deim_ops = None,
@@ -692,34 +611,34 @@ def in_sweep_branch_jump_rom(
 
     # 4. Kick the velocity coefficients
     alpha_kicked = alpha_symm + sign * eps * nu_red[:N_u]
-
-    # 5. Re-solve at the same (Re, amp) in the same cluster — no cluster reselection
     sol_kicked, w_rom_kicked, cbdata_kicked = solve_rom(
-        operators=operators_k,
-        nu=1.0 / (Re+offset),
-        amp=amp,
-        problem=problem,
-        deim_ops = deim_ops,
-        submesh_deim=submesh,
-        u_initial_guess=alpha_kicked,
-        p_initial_guess=p_symm,
-        return_internals=True,
-    )
-    if sol_kicked.converged == False:
-        # RUN WITHOUT DEIM
-        print('Didn\'t converge with DEIM, trying without DEIM')
+            operators=operators_k,
+            nu=1.0 / (Re+offset),
+            amp=amp,
+            problem=problem,
+            mode=mode,
+            deim_ops=deim_ops,
+            submesh_deim=submesh,
+            u_initial_guess=alpha_kicked,
+            p_initial_guess=p_symm,
+            return_internals=True,
+        )
 
+    if not sol_kicked.converged and mode == 'deim':
+        # Fall back to exact projection: DEIM is the usual culprit near a kick.
+        print("Didn't converge with DEIM, retrying with exact projection")
         sol_kicked, w_rom_kicked, cbdata_kicked = solve_rom(
             operators=operators_k,
             nu=1.0 / (Re+offset),
             amp=amp,
             problem=problem,
+            mode='exact',
             u_initial_guess=alpha_kicked,
             p_initial_guess=p_symm,
             return_internals=True,
         )
-        if sol_kicked.converged == False:
-            print('Didn\'t converge without DEIM either, returning anyway')
+        if not sol_kicked.converged:
+            print("Didn't converge with exact projection either, returning anyway")
 
 
     # 6. Diagnostic: reconstruct and probe asymmetry
@@ -733,9 +652,11 @@ def in_sweep_branch_jump_rom(
         sy = scores["uy_antisym_score"]
         forces = compute_forces(u_kicked,problem)
         print(f'The lift coefficient: {forces.lift}')
+        C_L = float(forces.lift)
 
     else:
         sx, sy = float("nan"), float("nan")
+        C_L = float("nan")
 
     return {
         "sol":            sol_kicked,
@@ -748,7 +669,7 @@ def in_sweep_branch_jump_rom(
         "sign":           int(sign),
         "mu_symm":        float(mu_symm),
         "nu_red":         nu_red,
-        "C_L":            float(forces.lift),
+        "C_L":            C_L,
         "asymmetry_x":    float(sx),
         "asymmetry_y":    float(sy),
     }
