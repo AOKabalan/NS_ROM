@@ -595,13 +595,15 @@ def build_cluster_deim(
     """
     Build (or load) the DEIM basis and online operators for cluster k.
 
+
     Returns
     -------
     deim_ops_k : DEIMOnlineOperators or None
-        None if cfg.use_deim is False.
+        None unless cfg.mode == 'deim'.
     """
-    if not cfg.use_deim:
+    if cfg.mode != 'deim':
         return None
+
 
     Z_u_k         = operators_k.Z_u
     n_rom_modes_k = Z_u_k.shape[1]
@@ -742,7 +744,6 @@ class ROMvsFOMComparison:
 # =============================================================================
 # Solve entry points
 # =============================================================================
-
 def solve_at_parameter(
     Re,
     amp,
@@ -753,7 +754,7 @@ def solve_at_parameter(
     initial_solution,
     M_u,
     M_p,
-    use_deim,
+    mode,
     cluster_forced=None,
     return_internals: bool = False,
     verbose: bool = True,
@@ -763,11 +764,15 @@ def solve_at_parameter(
 
     Selects a cluster (parameter box + solution-space distance, unless
     forced), projects the initial guess onto that cluster's reduced
-    basis, runs the ROM solver (with DEIM if enabled), and reconstructs
+    basis, runs the ROM solver in the requested `mode`, and reconstructs
     the full-field solution.
 
     Parameters
     ----------
+    mode : {'exact', 'deim', 'tensor'}
+        Convection evaluation strategy, passed straight through to
+        solve_rom. 'deim' requires deim_ops_dict[k] to be populated;
+        'tensor' requires operators[k].tensor_convection.
     cluster_forced : int or None
         If provided, bypass cluster selection and use this cluster.
     return_internals : bool, default False
@@ -785,30 +790,30 @@ def solve_at_parameter(
     problem.reynolds.assign(Re)
     problem.amplitude.assign(amp)
     nu = 1.0 / Re
-    k=select_the_cluster(clustering, Re, amp, initial_solution, M_u, cluster_forced = cluster_forced, verbose = verbose)
 
-    u_coeffs, p_coeffs=project_initial_solution(
+    k = select_the_cluster(
+        clustering, Re, amp, initial_solution, M_u,
+        cluster_forced=cluster_forced, verbose=verbose,
+    )
+
+    # Project the FOM initial guess onto cluster k's basis.
+    u_coeffs, p_coeffs = project_initial_solution(
         initial_solution,
-        operators,
+        operators[k],
         amp,
         M_u,
         M_p,
     )
-    # # ---- Project FOM initial guess onto cluster k's basis ----
-    # velocity_dofs = initial_solution.velocity.dat.data_ro.flatten()
-    # pressure_dofs = initial_solution.pressure.dat.data_ro.flatten()
-    # u_coeffs, p_coeffs = project_to_rom_coefficients(
-    #     velocity_dofs, pressure_dofs,
-    #     operators[k],
-    #     amp=amp,
-    #     M_u=M_u,
-    #     M_p=M_p,
-    # )
 
-    # ---- DEIM submesh (if needed) ----
-    deim_ops_k   = deim_ops_dict[k]
+    # ---- DEIM handles (only in DEIM mode) ----
+    deim_ops_k = deim_ops_dict.get(k) if mode == 'deim' else None
     submesh_deim = None
-    if use_deim and deim_ops_k is not None:
+    if mode == 'deim':
+        if deim_ops_k is None:
+            raise ValueError(
+                f"mode='deim' but deim_ops_dict[{k}] is None. "
+                "Build the DEIM operators for this cluster first."
+            )
         submesh_deim = SubMeshDEIM(problem.velocity_space, deim_ops_k)
 
     # ---- Solve ----
@@ -818,10 +823,11 @@ def solve_at_parameter(
         nu=nu,
         amp=amp,
         problem=problem,
+        mode=mode,
         deim_ops=deim_ops_k,
+        submesh_deim=submesh_deim,
         u_initial_guess=u_coeffs,
         p_initial_guess=p_coeffs,
-        submesh_deim=submesh_deim,
         return_internals=return_internals,
         verbose=verbose,
     )
@@ -846,7 +852,6 @@ def solve_at_parameter(
         callback_data=callback_data,
     )
 
-
 def solve_at_parameter_with_internals(
     Re,
     amp,
@@ -857,7 +862,7 @@ def solve_at_parameter_with_internals(
     initial_solution,
     M_u,
     M_p,
-    use_deim,
+    mode,
     cluster_forced=None,
     verbose: bool = True,
 ) -> LocalROMResult:
@@ -868,11 +873,12 @@ def solve_at_parameter_with_internals(
     """
     return solve_at_parameter(
         Re, amp, clustering, operators, deim_ops_dict, problem,
-        initial_solution, M_u, M_p, use_deim,
+        initial_solution, M_u, M_p, mode,
         cluster_forced=cluster_forced,
         return_internals=True,
         verbose=verbose,
     )
+
 
 
 def compare_rom_vs_fom(
@@ -1258,41 +1264,6 @@ def select_cluster_reduced_hysteresis(clustering, a_prev, k_prev, tau=0.8, verbo
 
     return chosen
 
-
-def select_cluster_reduced_projection(clustering, a_prev, k_prev, a_old=None, k_old=None, tau=0.8, verbose=False):
-    K = clustering.n_clusters
-    proj_loss_cur  = np.full(K, np.nan)
-    proj_loss_pred = np.full(K, np.nan)
-    d = _whitened_pod_distances(clustering, a_prev, k_prev)   # whitened global-POD
-    k_best = int(np.argmin(d))
-    chosen = k_best if d[k_best] < tau * d[k_prev] else k_prev   # switch only if clearly closer
-    if verbose:
-        for k in range(K):
-            mark = " <-" if k == chosen else (" *" if k == k_best else "")
-            print(f"   cluster {k}: red_dist={d[k]:.4f}{mark}")
-
-    # 2. projection loss onto each cluster basis
-    cb = getattr(clustering, 'change_of_basis', None)
-    if cb is not None:
-        norm_cur_sq = max(float(a_prev @ a_prev), 1e-30)
-        for k in range(K):
-            b = _apply_cb(cb, k_prev, k, a_prev)
-            proj_loss_cur[k] = max(0.0, min(1.0, 1.0 - float(b @ b) / norm_cur_sq))
-        if a_old is not None and k_old is not None:
-            a_old = np.asarray(a_old, dtype=float)
-            norm_old_sq = float(a_old @ a_old)
-            cross = float(a_prev @ _apply_cb(cb, k_old, k_prev, a_old))
-            norm_pred_sq = max(4.0 * norm_cur_sq - 4.0 * cross + norm_old_sq, 1e-30)
-            for k in range(K):
-                b = 2.0 * _apply_cb(cb, k_prev, k, a_prev) - _apply_cb(cb, k_old, k, a_old)
-                proj_loss_pred[k] = max(0.0, min(1.0, (norm_pred_sq - float(b @ b)) / norm_pred_sq))
-    if verbose:
-        for k in range(K):
-            print(f"   cluster {k}: PROJECTION DISTANCE CURRENT   ={proj_loss_cur[k]:.4f}")
-            print(f"   cluster {k}: PROJECTION DISTANCE PROJECTED ={proj_loss_pred[k]:.4f}")
-
-
-    return chosen
 
 
 def select_cluster_reduced_projection(clustering, a_prev, k_prev, a_old=None, k_old=None,
