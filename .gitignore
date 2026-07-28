@@ -57,7 +57,8 @@ venv*/
 *.csv
 results/
 figures/
-paper_figures/
 global/
 hyperstudy_ops/
 attic/
+paper_figures/*.pdf
+paper_figures/*.png
