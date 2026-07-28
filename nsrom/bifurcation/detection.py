@@ -24,8 +24,7 @@ import numpy as np
 
 from nsrom.navier_stokes import solve_steady_navier_stokes
 from nsrom.rom import assemble_inner_product_matrix
-from nsrom.local_rom import solve_at_parameter
-
+from nsrom.local_rom import solve_at_parameter, solve_at_parameter_with_internals
 from .branch_jump import compute_rom_indicator
 from .eigen_solver import solve_leftmost_real_eigenpairs
 from .jacobian import build_state_jacobian_pencil
@@ -172,7 +171,7 @@ def evaluate_rom_point(
     M_u,
     M_p,
     M_uu_red,
-    use_deim=True,
+    mode,
     n_eigenvalues=6,
     target=0.0,
 ):
@@ -199,7 +198,7 @@ def evaluate_rom_point(
             initial_solution=initial_solution,
             M_u=M_u,
             M_p=M_p,
-            use_deim=use_deim,
+            mode=mode,
             return_internals=True,
         )
 
@@ -352,7 +351,7 @@ def rom_sweep(
     M_p,
     M_uu_red,
     *,
-    use_deim=False,
+    mode,
     n_eigenvalues=6,
     target=0.0,
     verbose=True,
@@ -404,7 +403,7 @@ def rom_sweep(
                 initial_solution=initial_solution,
                 M_u=M_u,
                 M_p=M_p,
-                use_deim=use_deim,
+                mode= mode,
             )
 
             k_active = rom_res.cluster
@@ -734,8 +733,8 @@ def bisect_pitchfork_rom_from_records(
     M_u,
     M_p,
     M_uu_red,
+    mode,
     amp=0.0,
-    use_deim=False,
     Re_tol=1e-2,
     newton_safe_mu=1e-4,
     max_iter=20,
@@ -755,7 +754,7 @@ def bisect_pitchfork_rom_from_records(
             deim_ops_dict=deim_ops_dict, problem=problem,
             initial_solution=initial_solution,
             M_u=M_u, M_p=M_p, M_uu_red=M_uu_red,
-            use_deim=use_deim,
+            mode=mode,
             n_eigenvalues=n_eigenvalues, target=target,
         )
 
@@ -811,7 +810,7 @@ def find_critical_curve(
     M_u,
     M_p,
     M_uu_red,
-    use_deim=False,
+    mode,
     Re_tol=1e-2,
     max_iter=20,
     newton_safe_mu=None,
@@ -867,7 +866,7 @@ def find_critical_curve(
                 deim_ops_dict=deim_ops_dict, problem=problem,
                 initial_solution=initial_solution,
                 M_u=M_u, M_p=M_p, M_uu_red=M_uu_red,
-                use_deim=use_deim,
+                mode=mode,
                 n_eigenvalues=n_eigenvalues, target=target,
             )
             records.append(rec)
@@ -882,8 +881,8 @@ def find_critical_curve(
             clustering=clustering, operators=operators,
             deim_ops_dict=deim_ops_dict, problem=problem,
             initial_solution=initial_solution,
-            M_u=M_u, M_p=M_p, M_uu_red=M_uu_red,
-            amp=amp, use_deim=use_deim,
+            M_u=M_u, M_p=M_p, M_uu_red=M_uu_red, mode = mode,
+            amp=amp,
             Re_tol=Re_tol, max_iter=max_iter,
             newton_safe_mu=newton_safe_mu,
             n_eigenvalues=n_eigenvalues, target=target,
