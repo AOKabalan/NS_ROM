@@ -18,7 +18,7 @@ Usage:
         clustering=clustering, operators=operators, deim_ops_dict=deim_ops_dict,
         problem=problem, initial_solution=initial_solution,
         M_u=M_u, M_p=M_p, M_uu_red=M_uu_red,
-        use_deim=cfg.use_deim,
+        mode=cfg.mode,
         fom_compute=True,          # <-- also solve the FOM at each point, record error + C_L
         trace_symmetric=True,      # <-- also carry the symmetric branch off-axis
         sym_start='low',           # spine at Re_min, then sweep Re up at each amp
@@ -59,7 +59,6 @@ from nsrom.local_rom import (
 from nsrom.bifurcation.branch_jump import compute_rom_indicator, in_sweep_branch_jump_rom
 
 # make_thetas lives in sweep.py; import it from there so we reuse the same one
-from cluster_diagnostics import test_fj_consistency
 from sweep import make_thetas
 
 
@@ -123,6 +122,7 @@ def _continue(
     clustering, operators, deim_ops_dict, submesh_deims,
     problem, initial_solution, M_u, M_p, M_uu_red,
     *,
+    mode,
     seed=None, can_bifurcate=True, branch_id="sym",
     eps=0.8, jump_offset=0, cl_floor=1e-3,
     n_eigenvalues=6, target=0.0,
@@ -188,9 +188,11 @@ def _continue(
         t0 = time.perf_counter()
         solution, w_rom, callback_data = solve_rom(
             operators=operators[k], nu=nu, amp=amp, problem=problem,
-            deim_ops=deim_ops_dict[k],
+            mode=mode,
+            deim_ops=deim_ops_dict[k] if mode == 'deim' else None,
+            submesh_deim=submesh_deims.get(k),
             u_initial_guess=u_coeffs, p_initial_guess=p_coeffs,
-            submesh_deim=submesh_deims.get(k), return_internals=True,)
+            return_internals=True,)
         t_rom = time.perf_counter() - t0
         solution_rom = reconstruct_solution(solution, operators[k], problem, amp=amp)
 
@@ -232,16 +234,20 @@ def _continue(
                         u_rom=solution.velocity_coeffs, p_rom=solution.pressure_coeffs,
                         Re=Re, amp=amp, operators_k=operators[k], M_uu_red_k=M_uu_red[k],
                         problem=problem, eps=eps, sign=s, indicator=rom_ind,
-                        offset=jump_offset, deim_ops=deim_ops_dict[k],
+                        mode=mode,
+                        offset=jump_offset,
+                        deim_ops=deim_ops_dict.get(k) if mode == 'deim' else None,
                         submesh=submesh_deims.get(k))
                     if res['converged'] and abs(res['C_L']) < cl_floor:
                         res = in_sweep_branch_jump_rom(
                             u_rom=solution.velocity_coeffs, p_rom=solution.pressure_coeffs,
                             Re=Re, amp=amp, operators_k=operators[k], M_uu_red_k=M_uu_red[k],
-                            problem=problem, eps=2.0 * eps, sign=s, indicator=rom_ind,
-                            offset=jump_offset, deim_ops=deim_ops_dict[k],
+                            problem=problem, eps=2.0*eps, sign=s, indicator=rom_ind,
+                            mode=mode,
+                            offset=jump_offset,
+                            deim_ops=deim_ops_dict.get(k) if mode == 'deim' else None,
                             submesh=submesh_deims.get(k))
-                    if res['converged']:
+
                         res['cluster'] = k
                         res['spawn_re'] = Re
                         spawns.append(res)
@@ -342,7 +348,7 @@ def _continue(
 def _three_branches(
     path, clustering, operators, deim_ops_dict, submesh_deims,
     problem, initial_solution, M_u, M_p, M_uu_red,
-    *, eps=0.8, jump_offset=0, lock_children=False, fom_compute=False,
+    *, mode, eps=0.8, jump_offset=0, lock_children=False, fom_compute=False,
     debug_snapshot=None, verbose=True,
 ):
     all_records = []
@@ -351,6 +357,7 @@ def _three_branches(
         path, clustering, operators, deim_ops_dict, submesh_deims,
         problem, initial_solution, M_u, M_p, M_uu_red,
         seed=None, can_bifurcate=True, branch_id="sym",
+        mode=mode,
         eps=eps, jump_offset=jump_offset, fom_compute=fom_compute,
         debug_snapshot=debug_snapshot, verbose=verbose)
     all_records += trunk_records
@@ -380,6 +387,7 @@ def _three_branches(
             child_path, clustering, operators, deim_ops_dict, submesh_deims,
             problem, initial_solution, M_u, M_p, M_uu_red,
             seed=seed, can_bifurcate=False, branch_id=f"asym{sp['sign']:+d}",
+            mode= mode,
             eps=eps, jump_offset=jump_offset, lock_cluster=lock_k,
             fom_compute=fom_compute, verbose=verbose)
         all_records += child_records
@@ -403,7 +411,7 @@ def _offaxis_grid(
     anchor, base_id, spine_Re, sweep_Re_list, neg, pos,
     clustering, operators, deim_ops_dict, submesh_deims,
     problem, initial_solution, M_u, M_p, M_uu_red,
-    *, terminate_on_collapse, eps=0.8, jump_offset=0,
+    *, terminate_on_collapse, mode, eps=0.8, jump_offset=0,
     lock_cluster=None, keep_last_converged_guess=False,
     fom_compute=False, verbose=True,
 ):
@@ -433,6 +441,7 @@ def _offaxis_grid(
             problem, initial_solution, M_u, M_p, M_uu_red,
             seed=anchor, can_bifurcate=False,
             branch_id=f"{base_id}@spine{side_name}",
+            mode = mode,
             eps=eps, jump_offset=jump_offset, lock_cluster=lock_cluster,
             keep_last_converged_guess=keep_last_converged_guess,
             fom_compute=fom_compute, verbose=verbose)
@@ -451,6 +460,7 @@ def _offaxis_grid(
                 problem, initial_solution, M_u, M_p, M_uu_red,
                 seed=st, can_bifurcate=False,
                 branch_id=f"{base_id}@amp{a:+.2f}",
+                mode = mode,
                 eps=eps, jump_offset=jump_offset, lock_cluster=lock_cluster,
                 terminate_on_collapse=terminate_on_collapse,
                 keep_last_converged_guess=keep_last_converged_guess,
@@ -467,8 +477,8 @@ def build_full_diagram_bare(
     Re_range, amp_values,
     clustering, operators, deim_ops_dict,
     problem, initial_solution, M_u, M_p, M_uu_red,
-    use_deim=True,
     *,
+    mode,
     eps=0.8, jump_offset=0,
     lock_children=False,        # True -> pin each asym branch to one cluster (kink-free)
     fom_compute=False,          # True -> also solve FOM at each point, record error + C_L
@@ -510,13 +520,11 @@ def build_full_diagram_bare(
 
     neg = sorted([float(a) for a in amp_values if a < 0], reverse=True)
     pos = sorted([float(a) for a in amp_values if a > 0])
-
     submesh_deims = {}
-    if use_deim:
+    if mode == 'deim':
         for k in range(clustering.n_clusters):
             if deim_ops_dict.get(k) is not None:
                 submesh_deims[k] = SubMeshDEIM(problem.velocity_space, deim_ops_dict[k])
-
     all_records = []
 
     # ---- Phase 1: amp = 0 ----
@@ -524,6 +532,7 @@ def build_full_diagram_bare(
     base_records, anchors, trunk_states = _three_branches(
         path0, clustering, operators, deim_ops_dict, submesh_deims,
         problem, initial_solution, M_u, M_p, M_uu_red,
+        mode = mode,
         eps=eps, jump_offset=jump_offset, lock_children=lock_children,
         fom_compute=fom_compute, debug_snapshot=debug_snapshot, verbose=verbose)
     all_records += base_records
@@ -536,6 +545,7 @@ def build_full_diagram_bare(
                 clustering, operators, deim_ops_dict, submesh_deims,
                 problem, initial_solution, M_u, M_p, M_uu_red,
                 terminate_on_collapse=True,
+                mode =mode,
                 eps=eps, jump_offset=jump_offset,
                 fom_compute=fom_compute, verbose=verbose)
     elif verbose:
@@ -563,6 +573,7 @@ def build_full_diagram_bare(
             clustering, operators, deim_ops_dict, submesh_deims,
             problem, initial_solution, M_u, M_p, M_uu_red,
             terminate_on_collapse=False,          # <-- full grid, always
+            mode = mode,
             eps=eps, jump_offset=jump_offset,
             lock_cluster=sym_lock_cluster,
             keep_last_converged_guess=True,
