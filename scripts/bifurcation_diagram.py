@@ -24,7 +24,7 @@ from nsrom.navier_stokes import (
 from nsrom.snapshot_collection import load_snapshot_dofs
 from nsrom.lifting_functions import load_lifting_functions
 from nsrom.cluster_building import build_energy_snapshots, compute_or_load_clustering
-from nsrom.local_rom_old import build_local_roms
+from nsrom.local_rom import build_local_roms
 from nsrom.layout import LocalROMLayout
 from nsrom.config import LocalROMConfig
 
@@ -143,7 +143,7 @@ def solve_rom_fixed_cluster(
     submesh_deim = None
 
     if use_deim and deim_ops is not None:
-        from nsrom.local_rom_old import SubMeshDEIM
+        from nsrom.local_rom import SubMeshDEIM
         submesh_deim = SubMeshDEIM(problem.velocity_space, deim_ops)
 
     return solve_rom_with_internals(
