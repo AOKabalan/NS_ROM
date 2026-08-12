@@ -1,0 +1,71 @@
+{
+  "inner_product_type": "H1",
+  "matrices": {
+    "M_u": {
+      "shape": [
+        72378,
+        72378
+      ],
+      "nnz": 1650948,
+      "dtype": "float64",
+      "symmetric": true,
+      "diag_min": 0.8499833532070145,
+      "diag_max": 6.289274164169066,
+      "diag_all_positive": true,
+      "n_negative_offdiag": 644344,
+      "frac_negative_offdiag": 0.8556,
+      "_note_negative_offdiag": "not discriminating on P2 spaces",
+      "row_sum_total": 619.2899149530679,
+      "ones_quadratic_form": 619.2899149530708,
+      "_note_row_sums": "identical for M and M+K; informational only",
+      "diag_median": 4.6313061294516915,
+      "diag_to_mean_rowsum": 541.2726203733797,
+      "verdict": "gradient-containing (H1/energy): median diagonal is 541x the mean row sum, i.e. O(h^-2) scaling, not O(1)",
+      "l2_comparison": {
+        "l2_shape": [
+          72378,
+          72378
+        ],
+        "max_abs_diff": 6.272616847877569,
+        "relative_diff": 38.31672055220704,
+        "is_l2_mass": false
+      },
+      "source_type": "scipy.sparse",
+      "path": "mass/M_u_H1.npz",
+      "size_mb": 3.7316
+    },
+    "M_p": {
+      "shape": [
+        9161,
+        9161
+      ],
+      "nnz": 63217,
+      "dtype": "float64",
+      "symmetric": true,
+      "diag_min": 0.00011836380823459754,
+      "diag_max": 0.4009310615576916,
+      "diag_all_positive": true,
+      "n_negative_offdiag": 0,
+      "frac_negative_offdiag": 0.0,
+      "_note_negative_offdiag": "not discriminating on P2 spaces",
+      "row_sum_total": 309.6449574765343,
+      "ones_quadratic_form": 309.64495747653433,
+      "_note_row_sums": "identical for M and M+K; informational only",
+      "diag_median": 0.005412369639367219,
+      "diag_to_mean_rowsum": 0.16012764641904625,
+      "verdict": "consistent with a mass matrix: median diagonal is 0.16x the mean row sum, i.e. O(1)",
+      "l2_comparison": {
+        "l2_shape": [
+          9161,
+          9161
+        ],
+        "max_abs_diff": 0.0,
+        "relative_diff": 0.0,
+        "is_l2_mass": true
+      },
+      "source_type": "scipy.sparse",
+      "path": "mass/M_p_H1.npz",
+      "size_mb": 0.4204
+    }
+  }
+}
