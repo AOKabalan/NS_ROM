@@ -1,0 +1,16 @@
+\begin{table}[tb]
+  \centering
+  \caption{Reduced dimension at matched POD tolerance, with the resulting assembly and storage cost of the exact convective tensor. This is an offline cost; the online per-solve comparison is in \cref{tab:cost}.}
+  \label{tab:dim_comparison}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    $\varepsilon_{\mathrm{POD}}$ & $r_k$ (local) & $\sum_k r_k$ & $r$ (global) & $r_{\mathrm{glob}}^3/\sum_k r_k^3$ & $\max_k r_k^3/\sum_k r_k^3$ \\
+    \midrule
+    $10^{-4}$ & 9, 12, 20, 12 & 53 & 31 & 2.44$\times$ & 66\% \\
+    $10^{-6}$ & 14, 25, 45, 25 & 109 & 68 & 2.51$\times$ & 73\% \\
+    $10^{-8}$ & 22, 41, 80, 41 & 184 & 123 & 2.82$\times$ & 78\% \\
+    $10^{-10}$ & 32, 62, 125, 62 & 281 & 196 & 3.06$\times$ & 79\% \\
+    \bottomrule
+  \end{tabular}
+  \\[2pt] \footnotesize The local model needs \emph{more} modes in total ($\sum_k r_k$ exceeds $r$ at every tolerance), and is still cheaper, because the exact convective tensor is cubic in the dimension of each basis \emph{separately}: the global model builds one tensor of size $r^3$ while the local model builds $K$ of size $r_k^3$, and $\sum_k r_k^3 < (\sum_k r_k)^3$ by a wide margin. Column five is that ratio. Only one cluster is active per solve, so the online dense system is $\max_k r_k$ at worst, not $\sum_k r_k$. The saving is unevenly distributed: the final column gives the share of the local tensor cost carried by the largest cluster alone, and it grows as the tolerance tightens.
+\end{table}

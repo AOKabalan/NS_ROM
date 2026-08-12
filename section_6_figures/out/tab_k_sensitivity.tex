@@ -1,0 +1,16 @@
+\begin{table}[tb]
+  \centering
+  \caption{Sensitivity to the number of clusters at $\varepsilon_{\mathrm{POD}} = 10^{-8}$.}
+  \label{tab:k_sensitivity}
+  \begin{tabular}{rlrrrrr}
+    \toprule
+    $K$ & $r_k$ & $\sum_k r_k$ & $r_{\mathrm{glob}}^3/\sum_k r_k^3$ & median $t_{\mathrm{ROM}}$ (ms) & converged & $\mu$ NaN \\
+    \midrule
+    1 & 123 & 123 & -- & 166.0 & 100\% & 16.9\% \\
+    2 & 43, 103 & 146 & 1.59$\times$ & 139.5 & 100\% & 11.2\% \\
+    4 & 22, 41, 80, 41 & 184 & 2.82$\times$ & 110.8 & 100\% & 14.9\% \\
+    6 & 74, 38, 25, 19, 40, 22 & 218 & 3.34$\times$ & 86.6 & 100\% & 2.9\% \\
+    \bottomrule
+  \end{tabular}
+  \\[2pt] \footnotesize Restricted to the amplitude columns every run shares, since the $K = 2$ and $K = 6$ sweeps cover fewer of them and the missing columns are the large-$|\arot|$ ones rather than a random sample. Counts and rates are therefore comparable across rows. The tensor-cost ratio is against the $K = 1$ basis at the same tolerance, as in \cref{tab:dim_comparison}.
+\end{table}

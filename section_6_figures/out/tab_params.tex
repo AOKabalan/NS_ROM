@@ -1,0 +1,24 @@
+\begin{table}[tb]
+  \centering
+  \caption{Discretisation and reduced-basis parameters.}
+  \label{tab:params}
+  \begin{tabular}{ll}
+    \toprule
+    Quantity & Value \\
+    \midrule
+    Domain & \CHECK{} \\
+    Finite element pair & $\mathbb{P}_2/\mathbb{P}_1$ (Taylor--Hood) \\
+    Velocity DOFs & 72{,}378 \\
+    Pressure DOFs & 9{,}161 \\
+    Total $N_h$ & 81{,}539 \\
+    Triangles & 17{,}865 \\
+    Parameter space & $[20,109]\times[-1,1]$ \\
+    POD tolerance & $10^{-8}$ \\
+    Clusters $K$ & 4 \\
+    Per-cluster $r_k$ & 22, 41, 80, 41 \\
+    $\sum_k r_k$ & 184 \\
+    Global $r$ & 123 \\
+    \bottomrule
+  \end{tabular}
+  \\[2pt] \footnotesize Parameter space as swept: \texttt{NSROM\_RE\_MAX}=110 with a unit step puts the last computed point at $\Rey=109$, which is the value reported here and in the text. Reduced dimensions are read from the offline cache.
+\end{table}

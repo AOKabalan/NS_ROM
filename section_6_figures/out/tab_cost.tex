@@ -1,0 +1,22 @@
+\begin{table}[tb]
+  \centering
+  \caption{Online and offline cost.}
+  \label{tab:cost}
+  \begin{tabular}{lrrrr}
+    \toprule
+     & $t_{\mathrm{ROM}}$ (ms) & $t_{\mathrm{FOM}}$ (ms) & median speed-up & IQR \\
+    \midrule
+    Local ROM ($K=4$) vs FOM & 110.7 & 1689 & 19.8$\times$ & [15.1, 23.3] \\
+    Global ROM ($K=1$) vs FOM & 166.0 & 1702 & 10.3$\times$ & [10.2, 12.9] \\
+    Local, matched dimension & 76.2 & 1682 & 22.2$\times$ & [22.0, 28.3] \\
+    Global, matched dimension & 78.5 & 1768 & 22.4$\times$ & [21.7, 28.2] \\
+    Offline: snapshot generation & \CHECK{} & \CHECK{} &  &  \\
+    Offline: POD and supremizers & \CHECK{} & \CHECK{} &  &  \\
+    Offline: tensor precomputation & \CHECK{} & \CHECK{} &  &  \\
+    Break-even query count & \CHECK{} &  &  &  \\
+    Local tensor storage (MB) & 5.1 &  &  &  \\
+    Global tensor storage (MB) & 14.4 &  &  &  \\
+    \bottomrule
+  \end{tabular}
+  \\[2pt] \footnotesize The full-order solves are \emph{warm started} from the previous point on each leg, so every speed-up quoted here is a lower bound. Matched-dimension costs are equal by construction: that ablation is about accuracy, not speed. \CHECK{} entries are blocked on gap G4 (offline instrumentation).
+\end{table}

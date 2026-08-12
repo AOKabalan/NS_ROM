@@ -1,0 +1,18 @@
+\begin{table}[tb]
+  \centering
+  \caption{Exact tensor convection against DEIM over identical point sets.}
+  \label{tab:hyperreduction}
+  \begin{tabular}{lrr}
+    \toprule
+     & tensor & DEIM \\
+    \midrule
+    Points in the replay set & \CHECK{} & \CHECK{} \\
+    Converged & 3196 & 1724 \\
+    Convergence rate & 99\% & 59\% \\
+    Median Newton iterations & 2 & 34 \\
+    Median solve time (ms) & 96.8 & 641.1 \\
+    Points with $\mu=$ NaN & 83 & 1245 \\
+    \bottomrule
+  \end{tabular}
+  \\[2pt] \footnotesize Both arms are replayed over the same stored point set, so the denominator is fixed and the two columns are directly comparable. This is not possible in a standalone continuation sweep, where a diverged leg terminates and the DEIM arm never reaches most of the domain. Seeds are stored full-order states, so neither method inherits a warm start from the other. The $\mu=$ NaN count tracks the divergence count almost exactly, which is the substantive point: DEIM does not degrade the stability indicator near the bifurcation, it fails to reach a state at which one could be computed.
+\end{table}
