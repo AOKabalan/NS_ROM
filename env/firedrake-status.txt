@@ -1,0 +1,38 @@
+# Firedrake environment status (RECONSTRUCTED)
+# 'firedrake-status' is not installed in this venv, so this file is the
+# hand-assembled equivalent, carrying the reconstruction-critical piece:
+# the external PETSc git commit + configure options. Firedrake itself is a
+# pinned PyPI release (see [Key packages]); PETSc is a local source build.
+# Generated: 2026-08-12 14:16:43 EEST
+
+[Python]
+python  : 3.14.4  (/home/ali/venv-firedrake/bin/python)
+
+[Key packages]  (importlib.metadata; complete list in pip-freeze.txt)
+  firedrake        2026.4.1
+  firedrake-fiat   2026.4.0
+  fenics-ufl       2025.3.0
+  petsc4py         3.25.0
+  slepc4py         3.25.0
+  mpi4py           4.1.2
+  petsctools       2026.0
+  loopy            2025.2
+  numpy            2.4.6
+  scipy            1.17.1
+
+[PETSc]
+  version    : 3.25.0 (release)
+  git commit : 319083dccc8af9b143f30afbea30a2cdaff26b66  (tag v3.25.0, 2026-03-30 22:42:01 -0500)
+  PETSC_DIR  : /home/ali/petsc
+  PETSC_ARCH : arch-firedrake-default
+  build      : external source build (NOT bundled in the petsc4py wheel)
+  configure options:
+    --download-slepc PETSC_ARCH=arch-firedrake-default --COPTFLAGS="-O3 -march=native -mtune=native -I/usr/include/hdf5/openmpi -I/usr/include/hypre -I/usr/include/superlu -I/usr/include/superlu-dist -L/usr/lib/x86_64-linux-gnu/hdf5/openmpi" --CXXOPTFLAGS="-O3 -march=native -mtune=native -I/usr/include/hdf5/openmpi -I/usr/include/hypre -I/usr/include/superlu -I/usr/include/superlu-dist -L/usr/lib/x86_64-linux-gnu/hdf5/openmpi" --FOPTFLAGS="-O3 -march=native -mtune=native -I/usr/include/hdf5/openmpi -I/usr/include/hypre -I/usr/include/superlu -I/usr/include/superlu-dist -L/usr/lib/x86_64-linux-gnu/hdf5/openmpi" --with-c2html=0 --with-debugging=0 --with-fortran-bindings=0 --with-shared-libraries=1 --with-strict-petscerrorcode --with-bison --with-fftw --with-hdf5 --with-hwloc --with-hypre --with-metis --with-mumps --with-netcdf --with-pnetcdf --with-ptscotch --with-ptscotch-lib="-lptesmumps -lptscotch -lptscotcherr -lesmumps -lscotch -lscotcherr" --with-ptscotch-include=/usr/include/scotch --with-scalapack-lib=-lscalapack-openmpi --with-suitesparse --with-superlu_dist --with-zlib
+
+[SLEPc]
+  version    : 3.25.0  (built by PETSc via --download-slepc)
+
+[MPI]
+  implementation : Open MPI v5.0.10
+  location       : system OpenMPI (/usr/lib/x86_64-linux-gnu/openmpi)
+  compiler       : gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0

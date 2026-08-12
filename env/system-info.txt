@@ -1,0 +1,28 @@
+# System / hardware / interpreter — generated 2026-08-12 14:16:43 EEST
+
+[Python interpreter]
+python --version : Python 3.14.4
+which python     : /home/ali/venv-firedrake/bin/python
+sys.executable   : /home/ali/venv-firedrake/bin/python
+build            : 3.14.4 (main, Jun 18 2026, 14:25:02) [GCC 15.2.0]
+
+[venv pyvenv.cfg]
+  home = /usr/bin
+  include-system-site-packages = false
+  version = 3.14.4
+  executable = /usr/bin/python3.14
+  command = /home/ali/venv-firedrake/bin/python3 -m venv /home/ali/venv-firedrake
+
+[OS]
+  Ubuntu 26.04 LTS
+  kernel: 7.0.0-22-generic   arch: x86_64
+
+[CPU]
+  CPU(s):                                  12
+  Model name:                              Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  Thread(s) per core:                      2
+  Core(s) per socket:                      6
+  Socket(s):                               1
+
+[MPI]
+  Open MPI v5.0.10
