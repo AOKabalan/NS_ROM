@@ -57,7 +57,7 @@ from nsrom.local_rom import (
     _whitened_pod_distances,
 )
 from nsrom.bifurcation.branch_jump import compute_rom_indicator, in_sweep_branch_jump_rom
-
+from state_store import StateWriter
 # make_thetas lives in sweep.py; import it from there so we reuse the same one
 from sweep import make_thetas
 
@@ -130,6 +130,7 @@ def _continue(
     terminate_on_collapse=False, # asym legs: stop at the merge into symmetric
     collapse_frac=0.0001,           # break if |C_L| < collapse_frac * running peak
     fom_compute=False,           # also solve the FOM at each point (error + C_L)
+    state_writer=None,           # StateWriter -> record every point for replay
     keep_last_converged_guess=False,  # don't seed from a diverged point
     debug_snapshot=None,         # (Re, amp) -> save the reconstructed field there
     use_change_of_basis=True, verbose=True,
@@ -194,6 +195,10 @@ def _continue(
             u_initial_guess=u_coeffs, p_initial_guess=p_coeffs,
             return_internals=True,)
         t_rom = time.perf_counter() - t0
+        # Freeze the guess actually handed to the solver: a replay must
+        # reuse this exact vector, not re-derive it from its own history.
+        u_in = np.array(u_coeffs, copy=True)
+        p_in = np.array(p_coeffs, copy=True)
         solution_rom = reconstruct_solution(solution, operators[k], problem, amp=amp)
 
         # --- optional debug snapshot (OFF by default) ----------------------
@@ -208,18 +213,30 @@ def _continue(
                     problem.mesh)
 
 
-
-
-        # --- indicator ---
         mu, rom_ind = float('nan'), None
         if solution.converged:
-
-
-            rom_ind = compute_rom_indicator(
-                w_rom, callback_data, operators[k], M_uu_red[k],
-                n_eigenvalues=n_eigenvalues, target=target)
+            try:
+                rom_ind = compute_rom_indicator(
+                    w_rom, callback_data, operators[k], M_uu_red[k],
+                    n_eigenvalues=n_eigenvalues, target=target)
+            except Exception as e:
+                if verbose:
+                    print(f"  [indicator] failed at Re={Re:.2f} amp={amp:+.2f}: "
+                          f"{type(e).__name__}: {e}")
+                rom_ind = None
             if rom_ind is not None:
                 mu = float(rom_ind['mu'])
+
+        # --- indicator ---
+        # mu, rom_ind = float('nan'), None
+        # if solution.converged:
+
+
+        #     rom_ind = compute_rom_indicator(
+        #         w_rom, callback_data, operators[k], M_uu_red[k],
+        #         n_eigenvalues=n_eigenvalues, target=target)
+        #     if rom_ind is not None:
+        #         mu = float(rom_ind['mu'])
 
         # --- branch jump (trunk only) ---
         if can_bifurcate and solution.converged:
@@ -248,9 +265,11 @@ def _continue(
                             deim_ops=deim_ops_dict.get(k) if mode == 'deim' else None,
                             submesh=submesh_deims.get(k))
 
+                    if res['converged']:
                         res['cluster'] = k
                         res['spawn_re'] = Re
                         spawns.append(res)
+
 
         if verbose:
             status = "OK " if solution.converged else "DIV"
@@ -260,6 +279,8 @@ def _continue(
         record = {'branch': branch_id, 'Re': Re, 'amp': amp, 'cluster': k,
                   'converged': solution.converged, 'iterations': solution.iterations,
                   't_rom': t_rom, 'mu': mu}
+        fom = None
+        cl_fom = err_u = t_fom = None
         if solution.converged:
             problem.reynolds.assign(Re)
             problem.amplitude.assign(amp)
@@ -303,6 +324,24 @@ def _continue(
             converged_states.append(last_converged)
             if verbose:
                 print(f"  [forces] C_L={forces.lift:.4f}")
+        if state_writer is not None:
+            state_writer.write(
+                Re=Re, amp=amp, branch=branch_id, cluster=k,
+                converged=solution.converged,
+                iterations=solution.iterations,
+                u_in=u_in, p_in=p_in,
+                u_out=solution.velocity_coeffs if solution.converged else None,
+                p_out=solution.pressure_coeffs if solution.converged else None,
+                t_rom=t_rom, mu=mu,
+                C_L_rom=record.get('C_L_rom'), C_D_rom=record.get('C_D'),
+                u_fom=(fom.velocity.dat.data_ro.flatten()
+                       if fom is not None and fom.converged else None),
+                p_fom=(fom.pressure.dat.data_ro.flatten()
+                       if fom is not None and fom.converged else None),
+                C_L_fom=cl_fom, err_u=err_u, t_fom=t_fom,
+                fom_converged=(None if fom is None else bool(fom.converged)),
+                fom_iters=(None if fom is None else int(fom.num_iterations)),
+            )
         records.append(record)
 
         # --- C_L-collapse termination (asymmetric legs only) --------------
@@ -349,7 +388,7 @@ def _three_branches(
     path, clustering, operators, deim_ops_dict, submesh_deims,
     problem, initial_solution, M_u, M_p, M_uu_red,
     *, mode, eps=0.8, jump_offset=0, lock_children=False, fom_compute=False,
-    debug_snapshot=None, verbose=True,
+    debug_snapshot=None, verbose=True,state_writer=None,
 ):
     all_records = []
 
@@ -358,7 +397,7 @@ def _three_branches(
         problem, initial_solution, M_u, M_p, M_uu_red,
         seed=None, can_bifurcate=True, branch_id="sym",
         mode=mode,
-        eps=eps, jump_offset=jump_offset, fom_compute=fom_compute,
+        eps=eps, jump_offset=jump_offset, fom_compute=fom_compute,state_writer=state_writer,
         debug_snapshot=debug_snapshot, verbose=verbose)
     all_records += trunk_records
 
@@ -389,7 +428,7 @@ def _three_branches(
             seed=seed, can_bifurcate=False, branch_id=f"asym{sp['sign']:+d}",
             mode= mode,
             eps=eps, jump_offset=jump_offset, lock_cluster=lock_k,
-            fom_compute=fom_compute, verbose=verbose)
+            fom_compute=fom_compute,state_writer=state_writer, verbose=verbose)
         all_records += child_records
         if child_final is not None:
             anchors.append((f"asym{sp['sign']:+d}", child_final))
@@ -413,7 +452,7 @@ def _offaxis_grid(
     problem, initial_solution, M_u, M_p, M_uu_red,
     *, terminate_on_collapse, mode, eps=0.8, jump_offset=0,
     lock_cluster=None, keep_last_converged_guess=False,
-    fom_compute=False, verbose=True,
+    fom_compute=False, verbose=True,state_writer=None,
 ):
     """Walk amp 0 -> extreme at Re = spine_Re, then continue in Re along
     sweep_Re_list at every amp stop reached by the spine.
@@ -444,7 +483,7 @@ def _offaxis_grid(
             mode = mode,
             eps=eps, jump_offset=jump_offset, lock_cluster=lock_cluster,
             keep_last_converged_guess=keep_last_converged_guess,
-            fom_compute=fom_compute, verbose=verbose)
+            fom_compute=fom_compute,state_writer=state_writer, verbose=verbose)
         out += spine_records
 
         for st in spine_states:
@@ -464,7 +503,7 @@ def _offaxis_grid(
                 eps=eps, jump_offset=jump_offset, lock_cluster=lock_cluster,
                 terminate_on_collapse=terminate_on_collapse,
                 keep_last_converged_guess=keep_last_converged_guess,
-                fom_compute=fom_compute, verbose=verbose)
+                fom_compute=fom_compute, state_writer=state_writer, verbose=verbose)
             out += leg_records
 
     return out
@@ -482,6 +521,10 @@ def build_full_diagram_bare(
     eps=0.8, jump_offset=0,
     lock_children=False,        # True -> pin each asym branch to one cluster (kink-free)
     fom_compute=False,          # True -> also solve FOM at each point, record error + C_L
+    state_dir=None,             # str -> record every point for later replay
+    save_fom_fields=True,
+    fom_field_stride=1,
+    fom_field_dtype='float32',
     trace_symmetric=True,       # True -> also carry the symmetric trunk off-axis
     sym_start='high',            # 'low': spine at Re_min then sweep Re up (robust)
                                 # 'high': spine at Re_max then sweep Re down
@@ -525,6 +568,20 @@ def build_full_diagram_bare(
         for k in range(clustering.n_clusters):
             if deim_ops_dict.get(k) is not None:
                 submesh_deims[k] = SubMeshDEIM(problem.velocity_space, deim_ops_dict[k])
+    state_writer = None
+    if state_dir is not None:
+        state_writer = StateWriter(
+            state_dir, mode=mode,
+            save_fom_fields=save_fom_fields and fom_compute,
+            fom_field_stride=fom_field_stride,
+            fom_field_dtype=fom_field_dtype,
+            meta={'K': clustering.n_clusters,
+                  'Re_range': [float(Re_list[0]), float(Re_list[-1])],
+                  'n_Re': len(Re_list),
+                  'amp_values': [float(a) for a in amp_values],
+                  'eps': eps, 'jump_offset': jump_offset,
+                  'sym_start': sym_start, 'lock_children': lock_children},
+        )
     all_records = []
 
     # ---- Phase 1: amp = 0 ----
@@ -534,7 +591,8 @@ def build_full_diagram_bare(
         problem, initial_solution, M_u, M_p, M_uu_red,
         mode = mode,
         eps=eps, jump_offset=jump_offset, lock_children=lock_children,
-        fom_compute=fom_compute, debug_snapshot=debug_snapshot, verbose=verbose)
+        fom_compute=fom_compute, debug_snapshot=debug_snapshot, verbose=verbose,
+        state_writer=state_writer)
     all_records += base_records
 
     # ---- Phase 2: off-axis grid, asymmetric children (terminates at Re_c) ----
@@ -547,7 +605,8 @@ def build_full_diagram_bare(
                 terminate_on_collapse=True,
                 mode =mode,
                 eps=eps, jump_offset=jump_offset,
-                fom_compute=fom_compute, verbose=verbose)
+                fom_compute=fom_compute, verbose=verbose,
+                state_writer=state_writer)
     elif verbose:
         print("  [bare] no asymmetric anchors at amp=0; symmetric branch only")
 
@@ -577,6 +636,8 @@ def build_full_diagram_bare(
             eps=eps, jump_offset=jump_offset,
             lock_cluster=sym_lock_cluster,
             keep_last_converged_guess=True,
-            fom_compute=fom_compute, verbose=verbose)
-
+            fom_compute=fom_compute, verbose=verbose,
+            state_writer=state_writer)
+    if state_writer is not None:
+        state_writer.close()
     return all_records
