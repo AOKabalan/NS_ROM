@@ -62,7 +62,10 @@ def solve_leftmost_real_eigenpairs(
             lambda eps_, it, nconv, eig, err:
                 print(f"  iter={it:3d}  nconv={nconv}")
         )
-
+    n = J.getSize()[0]
+    nev = max(1, min(n_eigenvalues, n - 1))
+    ncv = min(n, max(2 * nev + 1, nev + 10))
+    eps.setDimensions(nev=nev, ncv=ncv)
     eps.solve()
     nconv = eps.getConverged()
 
