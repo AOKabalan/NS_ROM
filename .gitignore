@@ -62,3 +62,18 @@ hyperstudy_ops/
 attic/
 paper_figures/*.pdf
 paper_figures/*.png
+
+# Computed results (checkpoints, logs, run metadata, generated paper output).
+# These dirs also hold .jsonl/.json/.log/.txt/.tex files not caught by the
+# extension rules above. Irreplaceable — gitignored, never deleted.
+logs/
+paper_data/
+section_6_figures/out/
+states/
+states_snapshot_prepru/
+states_retired/
+
+# Backups and archives (kept on disk, never committed)
+*.tgz
+*.bak_*
+*.prebak_*
