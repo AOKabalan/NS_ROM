@@ -67,6 +67,21 @@ Built on **Firedrake** (which provides PETSc and SLEPc).
   (`python --version` after activating) before trusting any environment-sensitive
   behavior, and flag this to Ali rather than assuming.
 
+- **⚠️ `import firedrake` HANGS in singleton mode — launch everything under
+  `mpiexec -n 1`.** On this stack (OpenMPI **5.0.10**, Python 3.14.4) a plain
+  `python -c "import firedrake"` hangs forever inside `MPI_Init`
+  (`petsc4py.init` → PETSc init → `MPI_Init`; `from mpi4py import MPI` hangs the
+  same way). It is **not** a stale cache/lock or hostname problem — a fresh cache
+  and loopback-only TCP both still hang. Running under the MPI launcher avoids
+  the broken singleton-init path:
+  ```bash
+  mpiexec -n 1 python your_script.py
+  mpiexec -n 1 pytest            # e.g. the characterization suite in tests/
+  ```
+  This is still **one rank with no numerical effect** — purely a launch
+  workaround. Anyone reproducing this work will hit the hang; always use
+  `mpiexec -n 1`. See `env/environment.md` and `docs/known-issues.md`.
+
 ## IRREPLACEABLE COMPUTED RESULTS — never delete or modify
 
 These directories and files hold expensive computed results (solution

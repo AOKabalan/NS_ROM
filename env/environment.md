@@ -12,6 +12,28 @@ The three machine-readable companion files are:
 | `firedrake-status.txt` | Firedrake / PETSc / SLEPc / MPI versions **and the external PETSc git commit + configure options** — the reconstruction-critical part | reconstructed by hand (see note below) |
 | `system-info.txt` | Interpreter, venv config, OS, CPU, MPI | `python`, `lscpu`, `/etc/os-release`, `ompi_info` |
 
+## ⚠️ Running: `import firedrake` hangs — use `mpiexec -n 1`
+
+On this stack, a plain `python -c "import firedrake"` **hangs indefinitely**. The
+hang is inside `MPI_Init`: the import stack is `petsc4py/__init__.py:init` →
+PETSc initialization → `MPI_Init`, and `from mpi4py import MPI` hangs identically.
+It is **not** a stale compile-cache lock or a hostname-resolution problem — a
+fresh `XDG_CACHE_HOME`, loopback-only TCP (`OMPI_MCA_btl_tcp_if_include=lo`), and
+PMIx-isolation env vars all still hang. It is an **OpenMPI 5.0.10 singleton
+`MPI_Init` hang**.
+
+**Workaround — launch under the MPI runner:**
+
+```bash
+mpiexec -n 1 python your_script.py
+mpiexec -n 1 pytest            # e.g. tests/  (characterization suite)
+```
+
+Under `mpiexec -n 1`, `MPI_Init` completes and Firedrake imports in ~4 s. This is
+**one rank with no numerical effect** — purely a launch workaround, not a change
+to the computation. Any reproduction of this environment must launch Firedrake
+processes this way.
+
 ## The short version (what a rebuild needs)
 
 - **Python 3.14.4** (system `/usr/bin/python3.14`), in a venv at `~/venv-firedrake`.
