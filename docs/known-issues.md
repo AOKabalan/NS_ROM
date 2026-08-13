@@ -87,3 +87,32 @@ criterion, not a topological branch label). But it means the statement
 write-ups or figure captions. An earlier impression that clustering recovered
 the branches was an artifact of an interleaved subsample ordering, not a real
 correspondence.
+
+## 5. SLEPc eigenvalue results depend on solve history within the process
+
+`nsrom/bifurcation/eigen_solver.py::solve_leftmost_real_eigenpairs` sets **no**
+`setInitialSpace` on the EPS, so SLEPc uses a start vector drawn from PETSc's
+global random state. That state is **advanced by any earlier solve in the same
+process** — e.g. a preceding SNES solve — so the eigenvalue result depends on
+what ran before it:
+
+- **Standalone, B3 is byte-reproducible** (repeated fresh processes give
+  identical eigenvalues).
+- Run **after** the B2 ROM solve in the same process, B3 returns a **different**
+  set (observed `n_converged` 4 vs 5, and leftmost real part −0.0562 vs −0.0653)
+  because B2's Newton solve advanced the PETSc random state.
+- The B3 golden is therefore currently frozen as a **first-solve** capture
+  (matching how `pytest` invokes it — before any solve). **This will break if
+  test ordering changes** so that a solve precedes B3; the test is non-blocking
+  (xfail on drift) precisely to absorb that.
+
+**Production implication (not just a test artifact):** in a real bifurcation
+sweep, every eigenvalue computation runs after many prior solves in the same
+process, so **detected eigenvalues — and thus bifurcation detection — are not
+reproducible across runs** whenever solve history differs. The values are close
+in character (leftmost real part, the Hopf pair) but not bit-stable.
+
+**Recommended fix (later, not now):** set a deterministic initial vector on the
+EPS (`eps.setInitialSpace(v0)` with a fixed `v0`, or seed PETSc's random via
+`PetscRandom` before the solve) so results are independent of solve history.
+This would make bifurcation detection reproducible across runs.
