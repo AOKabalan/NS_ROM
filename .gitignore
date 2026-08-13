@@ -77,6 +77,10 @@ states_retired/
 *.bak_*
 *.prebak_*
 
+# Test capture logs + pytest cache (goldens under tests/golden/ ARE tracked)
+tests/*.log
+.pytest_cache/
+
 # section_6_figures/out/ holds the derived CSV + .tex macros that regenerate
 # every paper figure WITHOUT rerunning a sweep — the key reproducibility asset.
 # Keep those; ignore only the heavy generated PDFs. The directory itself must

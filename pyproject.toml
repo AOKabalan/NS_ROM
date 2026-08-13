@@ -21,5 +21,13 @@ dev = [
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "firedrake: test needs a live Firedrake import / Firedrake objects",
+    "slow: test builds meshes/operators or runs solves",
+    "nonblocking: never gates the suite (xfail on drift) — e.g. SLEPc eigenvalues",
+]
+
 [tool.setuptools.packages.find]
 include = ["nsrom*"]

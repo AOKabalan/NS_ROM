@@ -1,0 +1,7 @@
+{
+  "norm_u_base_H1": 22.591384241256936,
+  "norm_u_base_L2": 19.36793413987232,
+  "norm_u_control_H1": 4.369002055492869,
+  "norm_u_control_L2": 1.3606568815971822,
+  "source": "stored (lifting/)"
+}
