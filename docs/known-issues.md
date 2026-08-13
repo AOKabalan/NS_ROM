@@ -44,3 +44,46 @@ artifact (via `load_lifting_functions`), not a fresh recompute.
 **To fix later (not now):** give the `u_base` lifting solve a proper initial
 guess / Reynolds continuation so `compute_lifting_functions` reproduces the
 stored functions, then B1 can characterize the recompute path.
+
+## 3. `ROMSolution.residual_norm` is never populated — silently 0.0 (latent bug)
+
+`nsrom/rom/rom_solver.py::_extract_solution` constructs the `ROMSolution` with
+`iterations` and `converged` but **never sets `residual_norm`**, so it keeps its
+default of `0.0` (`nsrom/rom/data_structures.py:381`). The true final Newton
+residual (e.g. `1.94e-8` for the B2 characterization solve) exists only in the
+SNES stdout, never on the returned object.
+
+Every consumer therefore reads a silent `0.0`. Affected call sites:
+
+- `nsrom/bifurcation/detection.py:227, 250, 261` — the bifurcation detector
+  records `rom_solution.residual_norm` in its per-Re result dict; always `0.0`
+  for solved points (the `:213` path uses an explicit `None` instead).
+- `nsrom/rom/data_structures.py:607` — serializes `solution.residual_norm` into
+  saved solution metadata; always `0.0`.
+- `nsrom/rom/data_structures.py:666` — batch save writes a `residual_norms`
+  array that is all `0.0`; `:710` reads it back.
+- Downstream readers of those saved arrays (e.g.
+  `scripts/compare_hyperreduction.py:140`, which looks for `residual_norms` /
+  `fnorms` keys) consequently see `0.0`.
+
+**To fix later (not now):** populate `residual_norm` in `_extract_solution`
+(e.g. from the SNES final function norm) so detection records and saved
+metadata carry the real value. Until then, treat any `residual_norm` in
+detection output or saved sweeps as meaningless.
+
+## 4. Energy-norm k-means clustering does NOT track branch identity
+
+Characterization finding (case A5). On a 39-snapshot, amp-spanning,
+block-stratified subsample (13 each from branches 0/1/2), energy-norm k-means
+(Cholesky whitening of the H1 inner product, `n_clusters=3`) gives
+`adjusted_rand_score(labels, branch_ids) ≈ 0.014` — i.e. **no agreement with
+branch identity**. The clusters partition by energy / Reynolds regime, not by
+branch.
+
+This is expected and correct for local-ROM partitioning (clusters group
+solutions that share a reduced basis well, which is an energy-similarity
+criterion, not a topological branch label). But it means the statement
+"**clusters correspond to branches**" is **false** and must not be assumed in
+write-ups or figure captions. An earlier impression that clustering recovered
+the branches was an artifact of an interleaved subsample ordering, not a real
+correspondence.
