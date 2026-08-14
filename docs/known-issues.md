@@ -3,6 +3,16 @@
 Reproducibility gaps and environment traps discovered while building the
 characterization test suite. These are recorded to be **fixed later**, not now.
 
+## TODO — Phase 1 staged trash not yet emptied
+
+Phase 1 cleanup moved ~**4.7 GB** of untracked, superseded/backup files to
+**`/home/ali/nsrom_phase1_trash/`** (manifest in `MOVED.log` there) instead of
+deleting them. They are still recoverable — move back if needed. **Reclaim the
+space with `rm -rf /home/ali/nsrom_phase1_trash` only after confirming nothing
+is needed.** Notably it holds `states_snapshot_prepru/` (the pre-pruning
+snapshot; its unique pre-prune records are also preserved in
+`states/**/*.prebak_*`). Do not empty during Phase 2.
+
 ## 1. `import firedrake` hangs in singleton mode (environment blocker)
 
 On the current stack (OpenMPI **5.0.10**, Python 3.14.4), a plain
@@ -87,6 +97,33 @@ criterion, not a topological branch label). But it means the statement
 write-ups or figure captions. An earlier impression that clustering recovered
 the branches was an artifact of an interleaved subsample ordering, not a real
 correspondence.
+
+## Note — global ROM = local pipeline with `n_clusters=1`
+
+The global ROM baseline is obtained by running the **local** pipeline
+(`scripts/main_local.py`, `LocalROMConfig(n_clusters=1, ...)`), not a separate
+global builder. The former standalone scripts `scripts/main_global_rom.py` and
+`scripts/build_diagram_bare_global_rom.py` were **retired** (moved to
+`/home/ali/nsrom_phase1_trash/scripts/`) as redundant.
+
+Why they're equivalent: at `n_clusters=1` the single cluster contains **all**
+snapshots (`cluster_indices[0] = np.where(labels==0)[0]` = every index), and the
+local basis path (`build_cluster_pod`) calls the **same** `compute_pod_basis`
+(same snapshots, `inner_product_type='H1'`, `compute_supremizer=True`, same
+`u_base`/`u_control` centering, same `boundary_markers`), the **same** truncation
+rule (`modes_for_tolerance(evals, pod_energy_tol, n_*_max)` with `n_sup = n_pres`),
+the **same** `build_reduced_operators`, and the **same** `solve_rom`. The K=1
+cluster-selection / change-of-basis machinery is a no-op.
+
+**Caveat for write-ups — the one real difference:** the truncation *cap* differed.
+The retired global script hard-coded `N_VELOCITY_MODES = N_PRESSURE_MODES = 50`,
+whereas the local pipeline uses `n_velocity_max=400`, `n_pressure_max=200`
+(defaults, env-overridable). So the POD **modes are identical**, but if the energy
+tolerance retains more than 50 modes at K=1 (likely — the K=4 run already reached
+53 velocity modes in one cluster), the two would keep **different mode counts**.
+The current baseline therefore uses the energy-tolerance truncation (capped at
+400/200), consistent with every other local ROM — state this rather than the
+old 50-mode cap when describing the global baseline.
 
 ## 5. SLEPc eigenvalue results depend on solve history within the process
 
