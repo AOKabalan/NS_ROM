@@ -21,13 +21,18 @@ from firedrake import Function, TestFunction, TrialFunction, inner, grad, dx, as
 # Core Algorithms
 # =============================================================================
 
-def compute_pod_basis(
+def compute_deim_pod_basis(
     snapshots: np.ndarray,
     n_modes: Optional[int] = None,
     tol: float = 1e-15
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Compute POD basis via method of snapshots.
+    Compute a plain (Euclidean) POD basis via the method of snapshots.
+
+    DEIM-internal helper for the nonlinear-term (F/J) bases: single field,
+    NO inner-product weighting, NO supremizer, NO homogenization. Distinct
+    from nsrom.rom.pod.compute_pod_basis, which builds the full inner-product-
+    weighted, supremizer-enriched ROM basis and returns a PODBasis object.
 
     Args:
         snapshots: (n_dofs, n_snapshots) array
@@ -271,7 +276,7 @@ def compute_and_save_basis(
     # Convective
     print("\n--- Convective Term ---")
     F_snapshots = assemble_convective_snapshots(velocity_functions, velocity_space)
-    modes_F, eigenvalues_F = compute_pod_basis(F_snapshots, n_modes_F)
+    modes_F, eigenvalues_F = compute_deim_pod_basis(F_snapshots, n_modes_F)
     actual_n_modes_F = modes_F.shape[1]
     print(f"Convective: {actual_n_modes_F} modes")
     del F_snapshots
@@ -281,7 +286,7 @@ def compute_and_save_basis(
     J_snapshots, (indptr, col_indices) = assemble_jacobian_snapshots(
         velocity_functions, velocity_space
     )
-    modes_J, eigenvalues_J = compute_pod_basis(J_snapshots, n_modes_J)
+    modes_J, eigenvalues_J = compute_deim_pod_basis(J_snapshots, n_modes_J)
     actual_n_modes_J = modes_J.shape[1]
     n_dofs = velocity_space.dim()
     print(f"Jacobian: {actual_n_modes_J} modes, nnz={len(col_indices)}")
@@ -498,7 +503,7 @@ def build_deim_approximation(
     print(f"Building DEIM approximation for {name}")
     print(f"{'='*50}")
 
-    modes, eigenvalues = compute_pod_basis(snapshots, n_modes)
+    modes, eigenvalues = compute_deim_pod_basis(snapshots, n_modes)
     print(f"POD: {n_modes} modes computed")
 
     indices = deim_algorithm(modes)
