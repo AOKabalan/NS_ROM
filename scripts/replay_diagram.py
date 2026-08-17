@@ -41,7 +41,7 @@ the full field and is basis-agnostic.
 
 Usage
 -----
-    from state_store import StateWriter
+    from nsrom.io.state_store import StateWriter
     from replay_diagram import replay_points, preflight
 
     preflight("states/E1_K4_tensor", operators)      # run this first
@@ -66,7 +66,7 @@ from nsrom.rom import solve_rom, reconstruct_solution, project_to_rom_coefficien
 from nsrom.navier_stokes import compute_forces
 from nsrom.bifurcation.branch_jump import compute_rom_indicator
 from nsrom.local_rom import select_cluster
-from state_store import StateStore
+from nsrom.io.state_store import StateStore
 
 
 # ---------------------------------------------------------------------------

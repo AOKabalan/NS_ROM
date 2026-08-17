@@ -57,7 +57,7 @@ from nsrom.local_rom import (
     _whitened_pod_distances,
 )
 from nsrom.bifurcation.branch_jump import compute_rom_indicator, in_sweep_branch_jump_rom
-from state_store import StateWriter
+from nsrom.io.state_store import StateWriter
 # make_thetas lives in sweep.py; import it from there so we reuse the same one
 from sweep import make_thetas
 

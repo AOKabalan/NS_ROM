@@ -48,7 +48,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.append("scripts")
-from state_store import StateStore  # noqa: E402
+from nsrom.io.state_store import StateStore  # noqa: E402
 
 
 HELP_MASS = """

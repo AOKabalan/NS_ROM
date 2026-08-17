@@ -502,7 +502,7 @@ def run_replay(clustering, operators, deim_ops_dict, problem,
 
 
     import sys
-    from state_store import StateWriter
+    from nsrom.io.state_store import StateWriter
     from replay_diagram import replay_points, preflight
 
     _seed = os.environ.get("NSROM_REPLAY_SEED", "stored")
