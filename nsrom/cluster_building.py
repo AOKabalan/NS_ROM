@@ -110,12 +110,6 @@ class ClusteringResult:
 # Cholesky energy transform
 # =============================================================================
 
-def build_cholesky_transform_depreciated(M):
-    factor = cholesky(sp.csc_matrix(M))
-    L = factor.L()
-    P = factor.P()
-    return L, P
-
 def build_cholesky_transform(M):
     """
     Factor M so that  L Lᵀ = P M Pᵀ  (scikit-sparse >= 0.5).
