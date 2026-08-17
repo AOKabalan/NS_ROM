@@ -125,6 +125,107 @@ The current baseline therefore uses the energy-tolerance truncation (capped at
 400/200), consistent with every other local ROM — state this rather than the
 old 50-mode cap when describing the global baseline.
 
+## `*_tol1e-12` POD bases — invalid caches, reproduction, and orthonormality
+
+### Invalid historical caches
+
+- `local_rom/K1_H1_tol1e-12/` and `local_rom/K4_H1_tol1e-12/` contain **invalid
+  27-velocity-mode bases** and **must not be cited as genuine `tol=1e-12` results.**
+- The stored K1 `velocity_energy_fraction` is **`0.9999627062891424`**.
+- A fresh production-matrix calculation gives cumulative energy **`0.9999627062891426`**
+  at mode 27 — agreement **within 1 ULP, not bit-for-bit**. (An earlier exact match
+  used the *saved* mass matrix; the freshly *assembled* H1 matrix differs by 1 ULP.)
+- This corresponds to an **effective discarded-energy tolerance of ≈ `3.73e-5` (`~4e-5`)**,
+  not `1e-12`.
+- The **precise historical build-time mistake remains unknown.** These are **stale /
+  mislabeled artifacts with unresolved build provenance**; skipped recomputation or
+  cache carry-over are unverified possibilities and are **not** asserted as proven.
+- **Ruled-out explanations (evidence from the tested real K1 spectrum, not a universal
+  guarantee for every possible spectrum):** the boundary and negative-tail explanations
+  were ruled out. The `1e-12` target and `cumulative.max()` differed by approximately
+  **4499 ULPs**; an out-of-range `searchsorted` result drives the selected count
+  **upward toward the configured cap, not down to 27**. NumPy's `np.linalg.eigvalsh` and
+  the production pipeline's SciPy `scipy.linalg.eigh` produced the same effective
+  spectrum, with no negative-tail collapse capable of explaining the stored basis.
+- K4: the existing `K4_H1_tol1e-12` cache is invalid based on its stored dimensions
+  (27 velocity modes in every cluster) and energy behavior, but **an isolated K4
+  rebuild has NOT been performed** — this note does not claim K4 was rebuilt.
+
+### Successful current-pipeline reproduction (K1)
+
+An isolated K1 rebuild on **2026-08-17**, using the current unmodified production POD
+path and a fresh output root outside the repository, produced:
+
+- velocity: **182** modes
+- pressure: **106** modes
+- supremizer: **106** modes
+- velocity retained energy: ≈ **`0.9999999999990026`**
+- pressure retained energy: ≈ **`0.9999999999990763`**
+- enriched velocity / operator dimension: **`288 = 182 + 106`**
+- consistent reduced-operator shapes (`A_N (288,288)`, `B_N (106,288)`, `Z_u` 288, `Z_p` 106)
+- an exact-mode `Re=80`, `amp=0.1` smoke solve **converging in four iterations**
+
+This demonstrates:
+
+- `tol=1e-12` is **accepted and reproducible** by the current K1 pipeline;
+- the current `modes_for_tolerance` selects **182** K1 velocity modes, **not 27**;
+- the historical K1 cache is **invalid**, rather than evidence of a current truncation bug.
+
+**Latent (defensive) hardening of `modes_for_tolerance`** (`nsrom/helper_functions.py:150`)
+remains worth doing later but **did not cause the historical 27-mode artifact**:
+negative-tail handling (clip negatives before the cumulative sum), explicit
+bounds/clamping of the selected count, and a warning when a requested tolerance is
+unattainable (`tol < 1 − cumulative.max()`). Deferred; no code changed here.
+
+**Cache status / required action.** The isolated K1 rebuild remains **validation output
+outside the repository** and has **not** replaced `local_rom/K1_H1_tol1e-12/`. Both
+historical `tol1e-12` production caches remain **quarantined from scientific use.** K1
+must be **explicitly replaced from a reviewed rebuild**, and K4 must be **independently
+rebuilt and validated**, before either cache is used as a genuine `tol=1e-12` result.
+
+### Tight-tolerance raw-POD orthonormality degrades with retained low-energy modes
+
+Read-only comparison using the current production-assembled H1 velocity and L2 pressure
+matrices. Raw POD **(M)-orthonormality degrades progressively** as increasingly
+low-energy modes are retained. Velocity H1 evidence (`max |off-diagonal of ΦᵀMΦ|`):
+
+| Basis                | Velocity modes | max off-diagonal of `ΦᵀMΦ` | `1e-7` check |
+| -------------------- | -------------: | -------------------------: | ------------ |
+| `tol=1e-4`           |             23 |                 `2.20e-13` | pass         |
+| `tol=1e-6`           |             49 |                 `2.90e-11` | pass         |
+| untolled `K1_H1`     |             70 |                 `2.61e-10` | pass         |
+| `tol=1e-8`           |             84 |                  `1.96e-9` | pass         |
+| `tol=1e-10`          |            128 |                  `2.18e-7` | fail         |
+| isolated `tol=1e-12` |            182 |                  `2.36e-5` | fail         |
+
+- Pressure shows the **same progression** and fails the `1e-7` check at `1e-10` and
+  `1e-12` (max off-diagonal `3.4e-7` and `2.58e-5`).
+- The worst errors occur **between the highest-index, lowest-energy modes**.
+- At `1e-12`, the offending modes' eigenvalues are ≈ **`2.5e-13` of the leading
+  eigenvalue**.
+- **Gram condition numbers remain ≈ 1**, so this is a **gradual loss of strict
+  orthogonality**, not an ill-conditioned or singular basis.
+- The isolated rebuild therefore **passed** truncation, energy, metadata,
+  operator-dimension, and smoke-solve checks, but **did NOT pass** the existing `1e-7`
+  raw-POD orthonormality criterion (velocity `2.36e-5`, pressure `2.58e-5`). The
+  **same progressive trend is already visible in the pre-existing `tol=1e-10` cache,
+  which also fails the current `1e-7` raw-POD criterion** — not rebuild-specific.
+- Raw `[velocity, supremizer]` stacks are **not** expected to be orthonormal (measured
+  off-diagonal ≈ `0.10–0.14` across every basis). `build_reduced_operators` enriches the
+  velocity basis via `enrich_velocity_basis` (`nsrom/rom/operators.py`), which
+  Gram-Schmidt-orthonormalizes the supremizer modes against the velocity modes in the
+  `M_u` (H1) inner product — **reconfirmed directly from the current code**.
+
+**Interpretation (not a formally proven root cause):** normalization of increasingly
+tiny method-of-snapshots eigenmodes (`φᵢ = S vᵢ / ‖S vᵢ‖_M`) amplifies floating-point
+error, so cross-`M` inner products between near-null-space modes drift from zero.
+
+**Conclusion:** `tol=1e-12` is **usable as a sensitivity experiment**, but a tighter
+retained-energy tolerance does **not automatically imply a more accurate ROM** once
+modes near the numerical null space are included. Downstream error / stability
+comparisons are still required before treating `tol=1e-12` as the preferred publication
+configuration.
+
 ## 5. SLEPc eigenvalue results depend on solve history within the process
 
 `nsrom/bifurcation/eigen_solver.py::solve_leftmost_real_eigenpairs` sets **no**
