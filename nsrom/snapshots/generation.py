@@ -8,7 +8,7 @@ from nsrom.navier_stokes import (
     load_solution,
     solve_with_continuation,
 )
-from nsrom.snapshot_collection import (
+from nsrom.snapshots.collection import (
     SnapshotCollection,
     BranchedSnapshotCollection,
     save_snapshots,

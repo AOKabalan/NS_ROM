@@ -311,7 +311,7 @@ def _build_rom_bundle_readonly(problem):
     Refuses any tensor rebuild (which would overwrite conv_tensor.npz). Returns
     (clustering, operators, deim_ops_dict, M_u, M_p, initial_solution).
     """
-    from nsrom.snapshot_collection import load_snapshot_dofs
+    from nsrom.snapshots.collection import load_snapshot_dofs
     from nsrom.lifting_functions import load_lifting_functions
     from nsrom.cluster_building import build_energy_snapshots, compute_or_load_clustering
     from nsrom.local_rom import (
