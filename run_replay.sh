@@ -53,8 +53,8 @@ preflight() {
         fail=1
     fi
 
-    if [[ ! -f scripts/replay_diagram.py && ! -f replay_diagram.py ]]; then
-        echo "PREFLIGHT FAIL: replay_diagram.py not on the path."
+    if [[ ! -f nsrom/bifurcation/replay.py ]]; then
+        echo "PREFLIGHT FAIL: nsrom/bifurcation/replay.py not found."
         fail=1
     fi
 

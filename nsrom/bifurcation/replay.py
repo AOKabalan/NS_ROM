@@ -42,7 +42,7 @@ the full field and is basis-agnostic.
 Usage
 -----
     from nsrom.io.state_store import StateWriter
-    from replay_diagram import replay_points, preflight
+    from nsrom.bifurcation.replay import replay_points, preflight
 
     preflight("states/E1_K4_tensor", operators)      # run this first
 

@@ -412,7 +412,7 @@ def main():
     print(f"  S_tilde: {S_tilde.shape}")
     # --- persist the norms every reported error is measured in -------------
     if _env_bool('NSROM_DUMP_MASS', False):
-        from dump_mass import dump_mass_matrices
+        from nsrom.io.mass import dump_mass_matrices
         dump_mass_matrices({'M_u': M_u, 'M_p': M_p},
                            outdir=_env_str('NSROM_MASS_DIR', 'mass'),
                            inner_product=cfg.inner_product_type,
@@ -503,7 +503,7 @@ def run_replay(clustering, operators, deim_ops_dict, problem,
 
     import sys
     from nsrom.io.state_store import StateWriter
-    from replay_diagram import replay_points, preflight
+    from nsrom.bifurcation.replay import replay_points, preflight
 
     _seed = os.environ.get("NSROM_REPLAY_SEED", "stored")
     _stride = int(os.environ.get("NSROM_REPLAY_STRIDE", "1"))
