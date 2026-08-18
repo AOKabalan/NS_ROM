@@ -75,6 +75,35 @@ comparisons. Its module-level configuration lives in
 `nsrom/workflows/local_pipeline.py`; standalone commands retain their own
 module-level configuration under `scripts/`.
 
+## Reproducibility commands
+
+Run Firedrake-backed tests through one MPI rank:
+
+```bash
+make test-fast
+make test
+```
+
+Regenerate the proven repository-contained renderer subset:
+
+```bash
+make figures
+make figures-section6
+make figures-paper
+```
+
+`make figures` is intentionally partial. The Section 6 target reads the tracked
+`section_6_figures/out/critical_curve.csv` and rewrites the derived
+`tab_critcurve.tex` and `macros_critcurve.tex` in that directory. The paper
+target reads `mesh/mid_pinball.msh` and writes `figures/pinball_geometry.pdf`
+and `figures/pinball_geometry.png`.
+
+Other Section 6 and paper figures require local `states/`, `local_rom/`,
+`paper_data/`, `mass/`, POD, or sweep artefacts that are not available from a
+fresh checkout. Heavy FOM/ROM solves, basis construction, data generation, and
+full parameter sweeps are excluded from these rendering targets. Commands that
+import Firedrake, including both test targets, must run through one MPI rank.
+
 ## Method in brief
 
 The offline stage assembles a snapshot matrix over a sampling of `(Re, A)` covering all relevant solution branches. Snapshots are partitioned by energy-norm k-means++ clustering — with optional whitening to amplify low-energy but branch-discriminative POD modes that would otherwise be drowned out by high-energy smooth components. Each cluster yields its own velocity-plus-supremizer POD basis, a pressure basis, and DEIM/MDEIM bases for the non-affine convection and Jacobian terms.
