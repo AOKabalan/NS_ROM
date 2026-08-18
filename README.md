@@ -108,8 +108,8 @@ import Firedrake, including both test targets, must run through one MPI rank.
 
 Scientific data kept outside Git is inventoried in `data_manifest.json`. See
 [`docs/data.md`](docs/data.md) for the `figures` and `full` bundles and the
-read-only verification workflow. No OneDrive URL or archive checksum is recorded
-until Ali has reviewed and uploaded the bundle manually.
+read-only verification workflow. A reviewed full archive is available through
+the public OneDrive/SharePoint links documented there.
 
 ## Method in brief
 

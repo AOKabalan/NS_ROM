@@ -2,6 +2,24 @@
   "schema_version": 1,
   "description": "External scientific data required to render the active manuscript figures and to run the supported NS_ROM offline/online workflows.",
   "archive_extraction_root": ".",
+  "distributions": [
+    {
+      "provider": "OneDrive/SharePoint",
+      "bundle": "full",
+      "manifest_source_commit": "636bbb2",
+      "archive_filename": "NS_ROM_external_data_full_636bbb2.tar.zst",
+      "archive_share_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQD0pSOikm31RrCEIbpSqAsNAfRVn2rytm58XSpdNqhTK1k?e=qlMYap",
+      "archive_download_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQD0pSOikm31RrCEIbpSqAsNAfRVn2rytm58XSpdNqhTK1k?e=qlMYap&download=1",
+      "compressed_size_bytes": 2560264740,
+      "uncompressed_source_size_bytes": 2599261901,
+      "member_count": 3422,
+      "format": "tar+zstd",
+      "sha256": "f68d0f97472ca7fee286185edce64b91450f364264aaabeaccf679e33edffdaa",
+      "checksum_filename": "NS_ROM_external_data_full_636bbb2.tar.zst.sha256",
+      "checksum_share_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQC59clv_MMsTK-41AR6F5eIAeiPL_GnfDTCr-Vyr26HPdk?e=UCrIcv",
+      "checksum_download_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQC59clv_MMsTK-41AR6F5eIAeiPL_GnfDTCr-Vyr26HPdk?e=UCrIcv&download=1"
+    }
+  ],
   "bundles": {
     "figures": {
       "description": "Minimal tracked and external inputs consumed directly by section_6_figures/ and paper_figures/ without launching FOM/ROM solves.",
