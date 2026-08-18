@@ -459,7 +459,7 @@ def main():
     )
 
     if cfg.mode == 'deim':
-        from run_hyperreduction_study import report_deim_ceiling
+        from nsrom.workflows.hyperreduction_study import report_deim_ceiling
         report_deim_ceiling(operators, layout, cfg)
 
     if cfg.mode == 'tensor':

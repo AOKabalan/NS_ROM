@@ -40,7 +40,7 @@ Wiring required (two places, marked WIRE):
 
 Usage
 -----
-    from compare_hyperreduction import run_fixed_point_comparison, PROBE_LEGS
+    from nsrom.workflows.hyperreduction_comparison import run_fixed_point_comparison, PROBE_LEGS
 
     rows = run_fixed_point_comparison(
         legs=PROBE_LEGS,

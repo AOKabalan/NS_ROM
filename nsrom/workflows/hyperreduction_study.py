@@ -4,7 +4,7 @@ Runner for the hyper-reduction study (§6.3) and the locality ablation (§6.6).
 Call it from main_local.py once the snapshots, clustering, lifting, problem and
 mass matrices are already loaded, i.e. right after build_local_roms:
 
-    from run_hyperreduction_study import run_study, report_deim_ceiling
+    from nsrom.workflows.hyperreduction_study import run_study, report_deim_ceiling
 
     report_deim_ceiling(operators, layout, cfg)      # STEP 0, run this first
     run_study(clustering, operators, problem, initial_solution,
@@ -26,7 +26,7 @@ import numpy as np
 from nsrom.helper_functions import modes_for_tolerance
 from nsrom.rom import SubMeshDEIM
 
-from compare_hyperreduction import (
+from nsrom.workflows.hyperreduction_comparison import (
     PROBE_LEGS, build_branch_anchors, run_fixed_point_comparison,
     summarize, to_macros,
 )
