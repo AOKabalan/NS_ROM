@@ -28,7 +28,7 @@ from nsrom.navier_stokes import setup_navier_stokes_problem, load_solution
 from nsrom.snapshots.collection import load_snapshot_dofs
 from nsrom.lifting_functions import load_lifting_functions
 from nsrom.clustering.building import build_energy_snapshots, compute_or_load_clustering
-from nsrom.local_rom import (
+from nsrom.rom.local import (
     build_local_roms,
     solve_at_parameter,
     compare_rom_vs_fom,

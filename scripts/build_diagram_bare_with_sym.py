@@ -50,7 +50,7 @@ from firedrake import Function
 
 from nsrom.navier_stokes import compute_forces, solve_steady_navier_stokes, save_solution
 from nsrom.rom import solve_rom, reconstruct_solution, project_to_rom_coefficients, SubMeshDEIM
-from nsrom.local_rom import (
+from nsrom.rom.local import (
     select_the_cluster,
     select_cluster,
     apply_change_of_basis,

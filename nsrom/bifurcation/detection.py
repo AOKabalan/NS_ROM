@@ -24,7 +24,7 @@ import numpy as np
 
 from nsrom.navier_stokes import solve_steady_navier_stokes
 from nsrom.rom import assemble_inner_product_matrix
-from nsrom.local_rom import solve_at_parameter, solve_at_parameter_with_internals
+from nsrom.rom.local import solve_at_parameter, solve_at_parameter_with_internals
 from .branch_jump import compute_rom_indicator
 from .eigen_solver import solve_leftmost_real_eigenpairs
 from .jacobian import build_state_jacobian_pencil

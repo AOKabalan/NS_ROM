@@ -65,7 +65,7 @@ import numpy as np
 from nsrom.rom import solve_rom, reconstruct_solution, project_to_rom_coefficients
 from nsrom.navier_stokes import compute_forces
 from nsrom.bifurcation.branch_jump import compute_rom_indicator
-from nsrom.local_rom import select_cluster
+from nsrom.rom.local import select_cluster
 from nsrom.io.state_store import StateStore
 
 

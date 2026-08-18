@@ -62,7 +62,7 @@ from firedrake import Function
 
 from nsrom.navier_stokes import compute_forces, solve_steady_navier_stokes
 from nsrom.rom import solve_rom, reconstruct_solution, project_to_rom_coefficients
-from nsrom.local_rom import _whitened_pod_distances
+from nsrom.rom.local import _whitened_pod_distances
 
 from build_diagram_bare import _assemble_mixed, _norm_M, select_nearest_cluster
 

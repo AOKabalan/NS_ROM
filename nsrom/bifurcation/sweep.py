@@ -5,7 +5,7 @@ import time
 
 from nsrom.navier_stokes import solve_steady_navier_stokes, compute_forces
 from nsrom.rom import solve_rom, reconstruct_solution, project_to_rom_coefficients, SubMeshDEIM
-from nsrom.local_rom import (
+from nsrom.rom.local import (
     select_cluster,
     select_cluster_reduced,
     select_cluster_reduced_hysteresis,

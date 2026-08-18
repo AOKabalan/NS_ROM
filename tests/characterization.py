@@ -314,7 +314,7 @@ def _build_rom_bundle_readonly(problem):
     from nsrom.snapshots.collection import load_snapshot_dofs
     from nsrom.lifting_functions import load_lifting_functions
     from nsrom.clustering.building import build_energy_snapshots, compute_or_load_clustering
-    from nsrom.local_rom import (
+    from nsrom.rom.local import (
         build_local_roms, precompute_fast_selection, precompute_change_of_basis,
     )
     from nsrom.layout import LocalROMLayout
@@ -393,7 +393,7 @@ def case_B2_rom_solve(problem):
     0.0) — recorded here as-is; see review notes.
     """
     from firedrake import norm
-    from nsrom.local_rom import (
+    from nsrom.rom.local import (
         select_the_cluster, project_initial_solution, reconstruct_solution,
     )
     from nsrom.rom.rom_solver import solve_rom, _DEFAULT_SOLVER_PARAMETERS

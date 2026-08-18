@@ -19,7 +19,7 @@ from nsrom.rom import (
     project_to_rom_coefficients,
     SubMeshDEIM,
 )
-from nsrom.local_rom import select_cluster, _whitened_pod_distances
+from nsrom.rom.local import select_cluster, _whitened_pod_distances
 
 
 # ---------------------------------------------------------------------------
