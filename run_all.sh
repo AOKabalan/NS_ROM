@@ -44,9 +44,9 @@ NEAR_AMPS="-0.5,-0.3,-0.1,0.1,0.3,0.5"
 preflight() {
     local fail=0
 
-    if ! grep -qE '^\s+if res\[.converged.\]:\s*$' scripts/build_diagram_bare_with_sym.py; then
+    if ! grep -qE '^\s+if res\[.converged.\]:\s*$' nsrom/bifurcation/diagram.py; then
         echo "PREFLIGHT FAIL: the bare 'if res[\"converged\"]:' guard before"
-        echo "  spawns.append(res) is missing in build_diagram_bare_with_sym.py."
+        echo "  spawns.append(res) is missing in nsrom/bifurcation/diagram.py."
         echo "  Without it no asymmetric branches are ever spawned."
         fail=1
     fi

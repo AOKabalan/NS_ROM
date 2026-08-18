@@ -272,7 +272,7 @@ def run_study(
 
     # ---- STEP 5: Test B ---------------------------------------------------
     if run_diagram:
-        from build_diagram_bare_with_sym import build_full_diagram_bare
+        from nsrom.bifurcation.diagram import build_full_diagram_bare
         print("\n=== TEST B: full diagram per configuration ===")
         for name, c in configs.items():
             if c['clustering'] is not clustering:
