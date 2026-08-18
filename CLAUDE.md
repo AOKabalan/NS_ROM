@@ -40,15 +40,23 @@ Built on **Firedrake** (which provides PETSc and SLEPc).
 
 - **`nsrom/`** — the installed package (see `pyproject.toml`, `pip install -e .`).
   - `nsrom/rom/` — POD, DEIM/MDEIM hyper-reduction, reduced operators, Galerkin
-    Newton solver (`rom_solver.py` owns the authoritative `VALID_MODES`).
-  - `nsrom/bifurcation/` — eigenproblem detection, Jacobian, branch jumping,
-    sweep study.
-  - top level: snapshot collection, clustering, Navier–Stokes problem setup,
-    lifting functions, tensor convection, config/layout/cache helpers.
-- **`scripts/`** — CLI drivers / entry points. `main_local.py` is the primary
-  local-ROM pipeline; also `solve_FOM.py`, `sweep.py`, `build_diagram_bare*.py`,
-  `replay_diagram.py`, `state_store.py`, plotting scripts. Config lives in
-  module-level constants at the top of each script.
+    Newton solver, and local-ROM implementation (`rom_solver.py` owns the
+    authoritative `VALID_MODES`).
+  - `nsrom/bifurcation/` — detection, branch jumping, sweep, diagram
+    construction, and replay.
+  - `nsrom/clustering/` — clustering and whitening utilities.
+  - `nsrom/snapshots/` — snapshot generation, collection, and storage helpers.
+  - `nsrom/io/` — state-store and mass-matrix persistence.
+  - `nsrom/plotting/` — plotting and speedup-reporting utilities.
+  - `nsrom/workflows/` — the local pipeline and hyper-reduction workflows.
+  - top level: Navier–Stokes problem setup, lifting functions, tensor
+    convection, and config/layout/cache helpers.
+- **`scripts/`** — thin runnable/compatibility wrappers plus remaining explicit
+  command-line and diagnostic entry points. `scripts/main_local.py` remains the
+  supported shell-facing local-ROM command and delegates to
+  `nsrom.workflows.local_pipeline`. Substantial standalone tools include
+  `solve_FOM.py`, `fom_bifurcation_diagram_fom.py`, cluster/spine diagnostics,
+  point-error analysis, and snapshot plotting.
 - **`section_6_figures/`** and **`paper_figures/`** — generate manuscript
   figures and LaTeX macro/table files. `section_6_figures/out/` holds the
   generated PDFs, CSVs, and `.tex` output.

@@ -19,15 +19,25 @@ The code implements the full offline–online workflow: snapshot collection, POD
 
 ```
 NS_ROM/
-├── nsrom/        # the library (installable package)
-│   ├── rom/     # POD, DEIM/MDEIM, reduced operators, Galerkin solvers
-│   └── ...      # snapshot collection, clustering, Navier–Stokes problem, helpers
-├── scripts/     # runnable entry points (solve_fom, main_local, sweep, plotting)
-├── scratch/     # exploratory diagnostics and one-off experiments
-├── mesh/        # pinball meshes
-├── states/      # solution checkpoints
+├── nsrom/                    # installable package
+│   ├── rom/                  # POD/DEIM, operators, solvers, local ROMs
+│   ├── bifurcation/          # detection, sweep, diagrams, replay
+│   ├── clustering/           # clustering and whitening utilities
+│   ├── snapshots/            # snapshot generation, collection, storage helpers
+│   ├── io/                   # state store and mass-matrix persistence
+│   ├── plotting/             # plotting and speedup reporting
+│   └── workflows/            # local pipeline and hyper-reduction studies
+├── scripts/                  # wrappers plus standalone CLI/diagnostic tools
+├── mesh/                     # pinball meshes
+├── states/                   # solution checkpoints
 └── pyproject.toml
 ```
+
+`scripts/main_local.py` is the supported shell-facing local-ROM entry point; it
+delegates to `nsrom.workflows.local_pipeline`. Not every script is a wrapper:
+standalone tools such as `scripts/fom_bifurcation_diagram_fom.py`,
+`scripts/cluster_diagnostics.py`, and the point-error and plotting diagnostics
+remain intentionally outside the package workflows.
 
 ## Installation
 
@@ -51,7 +61,7 @@ python -c "import nsrom; print(nsrom.__version__)"
 Run a full-order solve on a single `(Re, A)` point:
 
 ```bash
-python scripts/solve_fom.py
+python scripts/solve_FOM.py
 ```
 
 Build a local ROM from snapshots and run an online evaluation:
@@ -60,14 +70,10 @@ Build a local ROM from snapshots and run an online evaluation:
 python scripts/main_local.py
 ```
 
-Sweep the `(Re, A)` parameter grid with the ROM and compare against the FOM at selected checkpoints:
-
-```bash
-python scripts/sweep.py
-python scripts/plot_sweep.py
-```
-
-Configuration (mesh path, parameter grid, basis sizes, DEIM/MDEIM toggles, clustering strategy) is set at the top of each script.
+The same local-pipeline entry point runs configured parameter diagrams and FOM
+comparisons. Its module-level configuration lives in
+`nsrom/workflows/local_pipeline.py`; standalone commands retain their own
+module-level configuration under `scripts/`.
 
 ## Method in brief
 
