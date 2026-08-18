@@ -1,0 +1,787 @@
+{
+  "schema_version": 1,
+  "description": "External scientific data required to render the active manuscript figures and to run the supported NS_ROM offline/online workflows.",
+  "archive_extraction_root": ".",
+  "bundles": {
+    "figures": {
+      "description": "Minimal tracked and external inputs consumed directly by section_6_figures/ and paper_figures/ without launching FOM/ROM solves.",
+      "inherits": [],
+      "inventory": {
+        "external": {
+          "requirement_count": 39,
+          "file_count": 3417,
+          "size_bytes": 2574060445
+        },
+        "tracked": {
+          "requirement_count": 3,
+          "file_count": 3,
+          "size_bytes": 793215
+        }
+      },
+      "entries": [
+        {
+          "id": "tracked-pinball-mesh",
+          "path": "mesh/mid_pinball.msh",
+          "path_type": "file",
+          "required_by": ["paper_figures/pinball_geometry_figure.py", "paper_figures hyper-reduction and POD/clustering figures"],
+          "reason": "Active pinball mesh; already distributed by Git.",
+          "tracked": true,
+          "external": false,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 789515
+        },
+        {
+          "id": "tracked-mass-metadata",
+          "path": "mass/mass_meta.json",
+          "path_type": "file",
+          "required_by": ["section_6_figures/_common.py"],
+          "reason": "Records the norm convention used in figure labels; already distributed by Git.",
+          "tracked": true,
+          "external": false,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 2163
+        },
+        {
+          "id": "tracked-critical-curve-table-input",
+          "path": "section_6_figures/out/critical_curve.csv",
+          "path_type": "file",
+          "required_by": ["section_6_figures/tab_critcurve.py"],
+          "reason": "Tracked scalar input for the critical-curve table and macros.",
+          "tracked": true,
+          "external": false,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 1537
+        },
+        {
+          "id": "paper-critical-curve",
+          "path": "critical_curve.csv",
+          "path_type": "file",
+          "required_by": ["paper_figures/plot_critical_curve.py", "paper_figures/make_figures.py"],
+          "reason": "Reduced critical-curve locations rendered by the paper figure.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 529
+        },
+        {
+          "id": "paper-critical-sweeps",
+          "path": "critical_sweep.csv",
+          "path_type": "file",
+          "required_by": ["paper_figures/plot_critical_curve.py", "paper_figures/make_figures.py"],
+          "reason": "Indicator sweep traces for the paper mu-sweep panels.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 11983
+        },
+        {
+          "id": "paper-fom-bifurcation-data",
+          "path": "figures/bifurcation_diagram.npz",
+          "path_type": "file",
+          "required_by": ["paper_figures/plot_bifurcation_diagram.py", "paper_figures/make_figures.py"],
+          "reason": "Existing expensive FOM bifurcation result used by the renderer.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 3656
+        },
+        {
+          "id": "e1-sweep-csv",
+          "path": "states/E1_K4_tensor/sweep_results.csv",
+          "path_type": "file",
+          "required_by": ["paper_figures/sweep_figures.py", "paper_figures/sweep_figures_advanced.py", "paper_figures/fig_branch_errors.py", "paper_figures/fig_fom_diagram.py"],
+          "reason": "Scalar local-ROM/FOM sweep used by paper renderers.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 743553
+        },
+        {
+          "id": "e1-index",
+          "path": "states/E1_K4_tensor/index.jsonl",
+          "path_type": "file",
+          "required_by": ["section_6_figures", "paper_figures/fig_branch_errors.py"],
+          "reason": "Primary tensor-run scalar records and point index.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 1383739
+        },
+        {
+          "id": "e2-index",
+          "path": "states/E2_K1_tensor/index.jsonl",
+          "path_type": "file",
+          "required_by": ["section_6_figures/fig_k_sweep.py", "section_6_figures/fig_local_vs_global.py", "section_6_figures/make_tables.py"],
+          "reason": "K=1 tensor baseline scalar records.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 1382394
+        },
+        {
+          "id": "e5-index",
+          "path": "states/E5_K2_tensor/index.jsonl",
+          "path_type": "file",
+          "required_by": ["section_6_figures/fig_k_sweep.py", "section_6_figures/make_tables.py"],
+          "reason": "K=2 sensitivity scalar records.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 577754
+        },
+        {
+          "id": "e6-index",
+          "path": "states/E6_K6_tensor/index.jsonl",
+          "path_type": "file",
+          "required_by": ["section_6_figures/fig_k_sweep.py", "section_6_figures/make_tables.py"],
+          "reason": "K=6 sensitivity scalar records.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 579742
+        },
+        {
+          "id": "e7-indices",
+          "path": "states/E7_K4_tensor_tol*/index.jsonl",
+          "path_type": "glob",
+          "required_by": ["section_6_figures/fig_err_vs_N.py"],
+          "reason": "K=4 tolerance-family scalar records; E1 supplies the nominal 1e-8 member.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 3,
+          "size_bytes": 3843709
+        },
+        {
+          "id": "matchdim-indices",
+          "path": "states/E1[12]_K*_matchdim/index.jsonl",
+          "path_type": "glob",
+          "required_by": ["section_6_figures/fig_local_vs_global.py", "section_6_figures/make_tables.py"],
+          "reason": "Matched-dimension local/global comparison records.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 2,
+          "size_bytes": 1103450
+        },
+        {
+          "id": "a0-convergence-indices",
+          "path": "states/E13_K4_a0_tol*/index.jsonl",
+          "path_type": "glob",
+          "required_by": ["section_6_figures/fig_fom_diagram.py", "section_6_figures/fig_rec_convergence.py"],
+          "reason": "Four K=4 a=0 tolerance runs used for reconstruction convergence.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 233147
+        },
+        {
+          "id": "a0-global-index",
+          "path": "states/E14_K1_a0_tol1e-8/index.jsonl",
+          "path_type": "file",
+          "required_by": ["section_6_figures/fig_rec_convergence.py"],
+          "reason": "Global a=0 comparison marker for reconstruction convergence.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 46388
+        },
+        {
+          "id": "hyperreduction-replay-indices",
+          "path": "states/R[1-4]_*/index.jsonl",
+          "path_type": "glob",
+          "required_by": ["section_6_figures/fig_newton_cost.py", "section_6_figures/make_tables.py"],
+          "reason": "Stored-seed and FOM-seed tensor/DEIM comparison records.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 3868157
+        },
+        {
+          "id": "e1-points-000000-002999",
+          "path": "states/E1_K4_tensor/points/00[0-2][0-9][0-9][0-9].npz",
+          "path_type": "glob",
+          "required_by": ["paper_figures/fig_branch_errors.py"],
+          "reason": "Stored FOM pressure and reduced pressure coefficients for indexed E1 rows 0-2999.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 3000,
+          "size_bytes": 904054150
+        },
+        {
+          "id": "e1-points-003000-003299",
+          "path": "states/E1_K4_tensor/points/003[0-2][0-9][0-9].npz",
+          "path_type": "glob",
+          "required_by": ["paper_figures/fig_branch_errors.py"],
+          "reason": "Stored FOM pressure and reduced pressure coefficients for indexed E1 rows 3000-3299.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 300,
+          "size_bytes": 89944348
+        },
+        {
+          "id": "e1-points-003300-003339",
+          "path": "states/E1_K4_tensor/points/0033[0-3][0-9].npz",
+          "path_type": "glob",
+          "required_by": ["paper_figures/fig_branch_errors.py"],
+          "reason": "Stored FOM pressure and reduced pressure coefficients for indexed E1 rows 3300-3339.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 40,
+          "size_bytes": 11760038
+        },
+        {
+          "id": "e1-points-003340-003345",
+          "path": "states/E1_K4_tensor/points/00334[0-5].npz",
+          "path_type": "glob",
+          "required_by": ["paper_figures/fig_branch_errors.py"],
+          "reason": "Stored FOM pressure and reduced pressure coefficients for indexed E1 rows 3340-3345.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 6,
+          "size_bytes": 1806795
+        },
+        {
+          "id": "figure-audit",
+          "path": "paper_data/audit.json",
+          "path_type": "file",
+          "required_by": ["section_6_figures duplicate-leg filtering"],
+          "reason": "Reviewed duplicate-leg classification used consistently across figures.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 781252
+        },
+        {
+          "id": "point-errors",
+          "path": "paper_data/point_errors_E1.csv",
+          "path_type": "file",
+          "required_by": ["section_6_figures/fig_branch_errors.py"],
+          "reason": "Precomputed pressure and recomputed velocity errors for the intended error panels.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 1168688
+        },
+        {
+          "id": "production-snapshot-dofs",
+          "path": "multi_param_multi_branch/snapshot_dofs.npz",
+          "path_type": "file",
+          "required_by": ["paper_figures/plot_clusters_compare.py", "paper_figures/plot_whitening_effect.py", "paper_figures/plot_pod_coefficients.py", "supported local/FOM workflows"],
+          "reason": "Production velocity/pressure snapshots, parameters, forces, and branch labels.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 456717390
+        },
+        {
+          "id": "lifting-base",
+          "path": "lifting/u_base.h5",
+          "path_type": "file",
+          "required_by": ["paper POD/clustering figures", "supported local/FOM workflows"],
+          "reason": "Stored base lifting field used by active loaders.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 4899771
+        },
+        {
+          "id": "lifting-control",
+          "path": "lifting/u_control.h5",
+          "path_type": "file",
+          "required_by": ["paper POD/clustering figures", "supported local/FOM workflows"],
+          "reason": "Stored control lifting field used by active loaders.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 4899771
+        },
+        {
+          "id": "lifting-metadata",
+          "path": "lifting/lifting_metadata.json",
+          "path_type": "file",
+          "required_by": ["paper POD/clustering figures", "supported local/FOM workflows"],
+          "reason": "Required metadata for loading the stored lifting fields.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 104
+        },
+        {
+          "id": "global-deim-operators",
+          "path": "global/deim_ops.npz",
+          "path_type": "file",
+          "required_by": ["paper_figures/hyperreduction_figure.py"],
+          "reason": "DEIM/MDEIM interpolation indices used to derive the plotted reduced cell set.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 6795854
+        },
+        {
+          "id": "global-pod-basis",
+          "path": "global/pod_basis_multi_branch/pod_basis.npz",
+          "path_type": "file",
+          "required_by": ["paper_figures/plot_cumulative_energy.py"],
+          "reason": "Global POD eigenvalues used by cumulative-energy plots.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 755518123
+        },
+        {
+          "id": "global-pod-metadata",
+          "path": "global/pod_basis_multi_branch/metadata.json",
+          "path_type": "file",
+          "required_by": ["paper_figures/plot_cumulative_energy.py"],
+          "reason": "Captured-energy metadata needed to preserve curve normalization.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 413
+        },
+        {
+          "id": "legacy-local-pod-bases",
+          "path": "local_rom/K4_H1/cluster_*/pod_basis/pod_basis.npz",
+          "path_type": "glob",
+          "required_by": ["paper_figures/plot_cumulative_energy.py"],
+          "reason": "Four local POD eigenvalue sets consumed by the paper renderer's default path.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 104135636
+        },
+        {
+          "id": "legacy-local-pod-metadata",
+          "path": "local_rom/K4_H1/cluster_*/pod_basis/metadata.json",
+          "path_type": "glob",
+          "required_by": ["paper_figures/plot_cumulative_energy.py"],
+          "reason": "Captured-energy metadata for the four local POD curves.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 2139
+        },
+        {
+          "id": "nominal-pressure-bases",
+          "path": "local_rom/K4_H1_tol1e-08/cluster_*/pod_basis/pod_basis.npz",
+          "path_type": "glob",
+          "required_by": ["paper_figures/fig_branch_errors.py"],
+          "reason": "Four pressure bases used to reconstruct ROM pressure fields.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 104135636
+        },
+        {
+          "id": "k1-tol1e-4-tensors",
+          "path": "local_rom/K1_H1_tol0.0001/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures dimension and tolerance summaries"],
+          "reason": "Tensor shape records the realized K=1 reduced dimension at tolerance 1e-4.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 218734
+        },
+        {
+          "id": "k1-tol1e-6-tensors",
+          "path": "local_rom/K1_H1_tol1e-06/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures dimension and tolerance summaries"],
+          "reason": "Tensor shape records the realized K=1 reduced dimension at tolerance 1e-6.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 2440964
+        },
+        {
+          "id": "k1-tol1e-8-tensors",
+          "path": "local_rom/K1_H1_tol1e-08/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures dimension, K, and convergence summaries"],
+          "reason": "Tensor shape records the nominal global reduced dimension.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 14420308
+        },
+        {
+          "id": "k1-tol1e-10-tensors",
+          "path": "local_rom/K1_H1_tol1e-10/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures dimension and tolerance summaries"],
+          "reason": "Tensor shape records the realized K=1 reduced dimension at tolerance 1e-10.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 58266078
+        },
+        {
+          "id": "k2-tol1e-8-tensors",
+          "path": "local_rom/K2_H1_tol1e-08/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures K-sensitivity summaries"],
+          "reason": "Two tensor shapes record the K=2 reduced dimensions.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 2,
+          "size_bytes": 9004020
+        },
+        {
+          "id": "k4-tol1e-4-tensors",
+          "path": "local_rom/K4_H1_tol0.0001/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures/fig_err_vs_N.py", "section_6_figures/make_tables.py"],
+          "reason": "Four tensor shapes record K=4 dimensions at tolerance 1e-4.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 75092
+        },
+        {
+          "id": "k4-tol1e-6-tensors",
+          "path": "local_rom/K4_H1_tol1e-06/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures/fig_err_vs_N.py", "section_6_figures/make_tables.py"],
+          "reason": "Four tensor shapes record K=4 dimensions at tolerance 1e-6.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 924783
+        },
+        {
+          "id": "k4-tol1e-8-tensors",
+          "path": "local_rom/K4_H1_tol1e-08/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures nominal dimension, K, and convergence summaries"],
+          "reason": "Four tensor shapes record nominal K=4 dimensions and storage.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 5075380
+        },
+        {
+          "id": "k4-tol1e-10-tensors",
+          "path": "local_rom/K4_H1_tol1e-10/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures/fig_err_vs_N.py", "section_6_figures/make_tables.py"],
+          "reason": "Four tensor shapes record K=4 dimensions at tolerance 1e-10.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 4,
+          "size_bytes": 19008250
+        },
+        {
+          "id": "k6-tol1e-8-tensors",
+          "path": "local_rom/K6_H1_tol1e-08/cluster_*/conv_tensor.npz",
+          "path_type": "glob",
+          "required_by": ["section_6_figures K-sensitivity summaries"],
+          "reason": "Six tensor shapes record the K=6 reduced dimensions.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 6,
+          "size_bytes": 4228527
+        }
+      ]
+    },
+    "full": {
+      "description": "Source-like checkpoints added to the figures bundle for supported offline/online and preserved FOM workflows.",
+      "inherits": ["figures"],
+      "inventory": {
+        "external_including_inherited": {
+          "requirement_count": 44,
+          "file_count": 3422,
+          "size_bytes": 2599261901
+        },
+        "external_added_by_bundle": {
+          "requirement_count": 5,
+          "file_count": 5,
+          "size_bytes": 25201456
+        },
+        "tracked_including_inherited": {
+          "requirement_count": 3,
+          "file_count": 3,
+          "size_bytes": 793215
+        }
+      },
+      "entries": [
+        {
+          "id": "local-pipeline-initial-state",
+          "path": "initial_states/base_velocity.h5",
+          "path_type": "file",
+          "required_by": ["nsrom/workflows/local_pipeline.py"],
+          "reason": "Hard-coded initial state for the supported local-ROM workflow; no current generator targets this path.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 4864105
+        },
+        {
+          "id": "preserved-fom-initial-state",
+          "path": "initial_states/velocity_checkpoint_symm.h5",
+          "path_type": "file",
+          "required_by": ["scripts/fom_bifurcation_diagram_fom.py", "paper_figures/compute_bifurcation_diagram.py"],
+          "reason": "Symmetric FOM seed used by the preserved diagram workflows.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 5638038
+        },
+        {
+          "id": "snapshot-symmetric-seed",
+          "path": "states/velocity_checkpoint_symm.h5",
+          "path_type": "file",
+          "required_by": ["nsrom/snapshots/generation.py", "nsrom/lifting_functions.py", "scripts/solve_FOM.py"],
+          "reason": "Symmetric branch checkpoint for snapshot and lifting workflows.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 4899771
+        },
+        {
+          "id": "snapshot-upper-seed",
+          "path": "states/velocity_checkpoint_up.h5",
+          "path_type": "file",
+          "required_by": ["nsrom/snapshots/generation.py"],
+          "reason": "Upper asymmetric branch checkpoint for snapshot generation.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 4899771
+        },
+        {
+          "id": "snapshot-lower-seed",
+          "path": "states/velocity_checkpoint_down.h5",
+          "path_type": "file",
+          "required_by": ["nsrom/snapshots/generation.py"],
+          "reason": "Lower asymmetric branch checkpoint for snapshot generation.",
+          "tracked": false,
+          "external": true,
+          "required": true,
+          "exists_locally": true,
+          "file_count": 1,
+          "size_bytes": 4899771
+        }
+      ]
+    }
+  },
+  "excluded": [
+    {
+      "path": "snapshots/",
+      "size_bytes": 8298298970,
+      "scientifically_required": false,
+      "reason": "Legacy full-field collection not read by active default workflows; production snapshot_dofs.npz is included instead."
+    },
+    {
+      "path": "snapshots_sparse/",
+      "size_bytes": 3617206021,
+      "scientifically_required": false,
+      "reason": "Legacy sparse collection not read by active defaults."
+    },
+    {
+      "path": "snapshots_dofs/",
+      "size_bytes": 914694378,
+      "scientifically_required": false,
+      "reason": "Alternative DOF collection not used by the supported production workflow."
+    },
+    {
+      "path": "snapshots_dofs_sparse/",
+      "size_bytes": 398563250,
+      "scientifically_required": false,
+      "reason": "Alternative sparse DOF collection not used by active defaults."
+    },
+    {
+      "path": "two_param_snapshots_pod_dofs/",
+      "size_bytes": 234533237,
+      "scientifically_required": false,
+      "reason": "Historical snapshot product not referenced by a supported workflow."
+    },
+    {
+      "path": "states/",
+      "size_bytes": 4818085789,
+      "scientifically_required": true,
+      "reason": "Only explicitly listed figure records/points and full-workflow branch seeds are required; all other run stores are regenerable online outputs or historical backups."
+    },
+    {
+      "path": "local_rom/",
+      "size_bytes": 28674616670,
+      "scientifically_required": true,
+      "reason": "Only explicitly listed POD bases and tensor-shape files are direct figure inputs; other caches are rebuildable, retired, or known-invalid historical caches."
+    },
+    {
+      "path": "global/",
+      "size_bytes": 3957666494,
+      "scientifically_required": true,
+      "reason": "Only the listed DEIM indices and global POD basis are active figure inputs; remaining global-ROM products are retired or derived."
+    },
+    {
+      "path": "archive/",
+      "size_bytes": 434199679,
+      "scientifically_required": false,
+      "reason": "Obsolete archived code/data, intentionally outside supported workflows."
+    },
+    {
+      "path": "hyperstudy_ops/",
+      "size_bytes": 65433645,
+      "scientifically_required": false,
+      "reason": "Derived hyper-reduction study cache, not a supported workflow input."
+    },
+    {
+      "path": "logs/",
+      "size_bytes": 15077022,
+      "scientifically_required": false,
+      "reason": "Run logs are diagnostics, not scientific inputs."
+    },
+    {
+      "path": "investigations/",
+      "size_bytes": 115641,
+      "scientifically_required": false,
+      "reason": "Debug investigations are not part of supported reproduction."
+    },
+    {
+      "path": "results/",
+      "size_bytes": 2040535,
+      "scientifically_required": false,
+      "reason": "Unreferenced result collection outside active figure/workflow paths."
+    },
+    {
+      "path": "figures/",
+      "size_bytes": 6972068,
+      "scientifically_required": true,
+      "reason": "Only figures/bifurcation_diagram.npz is an expensive renderer input; PNG/PDF outputs are reproducible and excluded."
+    },
+    {
+      "path": "section_6_figures/out/",
+      "size_bytes": 755986,
+      "scientifically_required": true,
+      "reason": "The tracked critical_curve.csv is documented above; generated PDF/PNG/TEX and other summary outputs are not external archive content."
+    },
+    {
+      "path": ".git/",
+      "size_bytes": null,
+      "scientifically_required": false,
+      "reason": "Version-control metadata is never external scientific data."
+    },
+    {
+      "path": ".cache/",
+      "size_bytes": null,
+      "scientifically_required": false,
+      "reason": "Machine-local tool cache."
+    },
+    {
+      "path": "__pycache__/",
+      "size_bytes": null,
+      "scientifically_required": false,
+      "reason": "Python bytecode is reproducible."
+    },
+    {
+      "path": ".pytest_cache/",
+      "size_bytes": null,
+      "scientifically_required": false,
+      "reason": "Test-run cache is reproducible."
+    },
+    {
+      "path": "nsrom.egg-info/",
+      "size_bytes": null,
+      "scientifically_required": false,
+      "reason": "Editable-install metadata is machine-local and reproducible."
+    }
+  ],
+  "outside_repository_exclusions": [
+    {
+      "label": "Phase 1 recovery material",
+      "reason": "Machine-local recovery material outside the repository must remain untouched and must never be included; no absolute machine path is stored in this manifest."
+    }
+  ]
+}

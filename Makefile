@@ -3,7 +3,7 @@ MPIEXEC ?= mpiexec
 PYTEST ?= pytest
 MPLBACKEND ?= Agg
 
-.PHONY: help test-fast test figures figures-section6 figures-paper
+.PHONY: help test-fast test figures figures-section6 figures-paper verify-data verify-data-full
 
 help:
 	@printf '%s\n' \
@@ -11,7 +11,9 @@ help:
 	  'make test             Run the complete test suite (one MPI rank).' \
 	  'make figures          Run the proven repository-contained renderer subset.' \
 	  'make figures-section6 Regenerate the tracked-input Section 6 table/macros.' \
-	  'make figures-paper    Regenerate the tracked-mesh pinball geometry figure.'
+	  'make figures-paper    Regenerate the tracked-mesh pinball geometry figure.' \
+	  'make verify-data      Verify the external figures data bundle.' \
+	  'make verify-data-full Verify the complete external data bundle.'
 
 test-fast:
 	$(MPIEXEC) -n 1 $(PYTEST) -m "not slow"
@@ -34,3 +36,9 @@ figures-paper:
 	@printf '%s\n' 'Paper note: local-data and heavy-computation figures are not rendered.'
 
 figures: figures-section6 figures-paper
+
+verify-data:
+	$(PYTHON) scripts/verify_external_data.py --bundle figures
+
+verify-data-full:
+	$(PYTHON) scripts/verify_external_data.py --bundle full

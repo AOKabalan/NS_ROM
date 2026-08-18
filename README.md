@@ -104,6 +104,13 @@ fresh checkout. Heavy FOM/ROM solves, basis construction, data generation, and
 full parameter sweeps are excluded from these rendering targets. Commands that
 import Firedrake, including both test targets, must run through one MPI rank.
 
+## External data
+
+Scientific data kept outside Git is inventoried in `data_manifest.json`. See
+[`docs/data.md`](docs/data.md) for the `figures` and `full` bundles and the
+read-only verification workflow. No OneDrive URL or archive checksum is recorded
+until Ali has reviewed and uploaded the bundle manually.
+
 ## Method in brief
 
 The offline stage assembles a snapshot matrix over a sampling of `(Re, A)` covering all relevant solution branches. Snapshots are partitioned by energy-norm k-means++ clustering — with optional whitening to amplify low-energy but branch-discriminative POD modes that would otherwise be drowned out by high-energy smooth components. Each cluster yields its own velocity-plus-supremizer POD basis, a pressure basis, and DEIM/MDEIM bases for the non-affine convection and Jacobian terms.
