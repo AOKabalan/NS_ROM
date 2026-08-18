@@ -49,8 +49,8 @@ from nsrom.rom import SubMeshDEIM   # at module top, next to the other imports
 
 from nsrom.bifurcation.sweep import build_fixed_amp_path, save_sweep_results
 from nsrom.bifurcation.diagram import build_full_diagram_bare
-from speedup_summary import speedup_summary
-from plot import plot_lift_3d
+from nsrom.plotting.speedup import speedup_summary
+from nsrom.plotting.plots import plot_lift_3d
 
 
 # =============================================================================
