@@ -11,7 +11,7 @@ Drop-in replacement for build_full_diagram.
 
 Usage:
 
-    from build_diagram_bare import build_full_diagram_bare
+    from build_diagram_bare_with_sym import build_full_diagram_bare
     results = build_full_diagram_bare(
         Re_range=np.arange(50.0, 100.0, 1.0),
         amp_values=[-0.3, -0.2, -0.1, 0.1, 0.2, 0.3],
@@ -79,7 +79,39 @@ def select_nearest_cluster(clustering, a_prev, k_prev, verbose=False):
 # ---------------------------------------------------------------------------
 # FOM helpers
 # ---------------------------------------------------------------------------
-from build_diagram_bare import _assemble_mixed, _fom_compare, _norm_M
+def _assemble_mixed(problem, velocity, pressure):
+    """Pack separate velocity/pressure Functions into a mixed-space Function
+    suitable as an initial guess for solve_steady_navier_stokes."""
+    w = Function(problem.mixed_space)
+    u, p = w.subfunctions
+    u.assign(velocity)
+    p.assign(pressure)
+    return w
+
+
+def _norm_M(vec, M):
+    """sqrt(vec^T M vec) -- same convention as compare_rom_vs_fom."""
+    return float(np.sqrt(vec @ (M @ vec)))
+
+
+def _fom_compare(problem, solution_rom, guess, M_u):
+    """Run one steady FOM solve from `guess`, compare to the ROM solution.
+    Returns (fom_solution, C_L_fom, err_u, t_fom) with err_u the relative
+    velocity error in the M_u inner product and t_fom the wall time of the FOM
+    solve alone (same convention as t_rom -- solve only, nothing else).
+    On non-convergence returns (fom, nan, nan, t_fom)."""
+    t0 = time.perf_counter()
+    fom = solve_steady_navier_stokes(problem, initial_guess=guess)
+    t_fom = time.perf_counter() - t0
+    if not fom.converged:
+        return fom, float('nan'), float('nan'), t_fom
+    forces = compute_forces(fom, problem)
+    u_rom = solution_rom.velocity.dat.data_ro.flatten()
+    u_fom = fom.velocity.dat.data_ro.flatten()
+    d = u_fom - u_rom
+    denom = _norm_M(u_fom, M_u)
+    err_u = _norm_M(d, M_u) / denom if denom > 0 else float('nan')
+    return fom, float(forces.lift), err_u, t_fom
 
 
 # ---------------------------------------------------------------------------

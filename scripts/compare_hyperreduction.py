@@ -11,7 +11,7 @@ For each leg in `legs`:
 
   1. A *reference* continuation marches the leg with the tensor ROM, and a FOM
      natural continuation marches alongside it -- exactly the protocol in
-     build_diagram_bare._continue (first point of the leg seeded from the ROM,
+     build_diagram_bare_with_sym._continue (first point of the leg seeded from the ROM,
      every subsequent point from the previous FOM solution).
 
   2. At each converged point the FOM velocity/pressure are projected onto
@@ -64,7 +64,7 @@ from nsrom.navier_stokes import compute_forces, solve_steady_navier_stokes
 from nsrom.rom import solve_rom, reconstruct_solution, project_to_rom_coefficients
 from nsrom.rom.local import _whitened_pod_distances
 
-from build_diagram_bare import _assemble_mixed, _norm_M, select_nearest_cluster
+from build_diagram_bare_with_sym import _assemble_mixed, _norm_M, select_nearest_cluster
 
 
 # ---------------------------------------------------------------------------

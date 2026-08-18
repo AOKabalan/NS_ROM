@@ -272,7 +272,7 @@ def run_study(
 
     # ---- STEP 5: Test B ---------------------------------------------------
     if run_diagram:
-        from build_diagram_bare import build_full_diagram_bare
+        from build_diagram_bare_with_sym import build_full_diagram_bare
         print("\n=== TEST B: full diagram per configuration ===")
         for name, c in configs.items():
             if c['clustering'] is not clustering:
@@ -288,7 +288,7 @@ def run_study(
                                    or {k: None for k in operators}),
                     problem=problem, initial_solution=initial_solution,
                     M_u=M_u, M_p=M_p, M_uu_red=M_uu_red,
-                    use_deim=(c['deim_ops'] is not None),
+                    mode=('deim' if c['deim_ops'] is not None else 'tensor'),
                     fom_compute=False,        # failure map only; errors come from Test A
                     trace_symmetric=True,
                     sym_start=sym_start,
