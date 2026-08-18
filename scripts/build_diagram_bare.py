@@ -52,7 +52,7 @@ from nsrom.bifurcation.branch_jump import compute_rom_indicator, in_sweep_branch
 
 # make_thetas lives in sweep.py; import it from there so we reuse the same one
 from cluster_diagnostics import test_fj_consistency
-from sweep import make_thetas
+from nsrom.bifurcation.sweep import make_thetas
 
 
 # ---------------------------------------------------------------------------
