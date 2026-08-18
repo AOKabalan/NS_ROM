@@ -51,14 +51,14 @@ preflight() {
         fail=1
     fi
 
-    if ! grep -q "state_dir=STATE_DIR" scripts/main_local.py; then
-        echo "PREFLIGHT FAIL: main_local.py does not pass state_dir to"
+    if ! grep -q "state_dir=STATE_DIR" nsrom/workflows/local_pipeline.py; then
+        echo "PREFLIGHT FAIL: nsrom/workflows/local_pipeline.py does not pass state_dir to"
         echo "  build_full_diagram_bare -- no states would be saved."
         fail=1
     fi
 
-    if ! grep -q "NSROM_RUN_TAG" scripts/main_local.py; then
-        echo "PREFLIGHT FAIL: main_local.py has no env overrides;"
+    if ! grep -q "NSROM_RUN_TAG" nsrom/workflows/local_pipeline.py; then
+        echo "PREFLIGHT FAIL: nsrom/workflows/local_pipeline.py has no env overrides;"
         echo "  apply main_local_env_patch.py first."
         fail=1
     fi

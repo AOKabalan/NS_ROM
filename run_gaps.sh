@@ -51,8 +51,8 @@ preflight() {
         echo "PREFLIGHT FAIL: nsrom does not import cleanly."
         fail=1
     fi
-    if ! grep -q "NSROM_RUN_TAG" scripts/main_local.py; then
-        echo "PREFLIGHT FAIL: main_local.py has no env overrides."
+    if ! grep -q "NSROM_RUN_TAG" nsrom/workflows/local_pipeline.py; then
+        echo "PREFLIGHT FAIL: nsrom/workflows/local_pipeline.py has no env overrides."
         fail=1
     fi
 
