@@ -42,7 +42,7 @@ from nsrom.deim import (
     build_deim_interpolation_matrix,
     check_interpolation_property,
 )
-from nsrom.cluster_building import (
+from nsrom.clustering.building import (
     build_cholesky_transform,
     transform,
     inverse_transform,
@@ -313,7 +313,7 @@ def _build_rom_bundle_readonly(problem):
     """
     from nsrom.snapshots.collection import load_snapshot_dofs
     from nsrom.lifting_functions import load_lifting_functions
-    from nsrom.cluster_building import build_energy_snapshots, compute_or_load_clustering
+    from nsrom.clustering.building import build_energy_snapshots, compute_or_load_clustering
     from nsrom.local_rom import (
         build_local_roms, precompute_fast_selection, precompute_change_of_basis,
     )
