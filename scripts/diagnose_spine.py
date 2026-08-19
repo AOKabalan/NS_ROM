@@ -50,7 +50,7 @@ from nsrom.rom.local import select_cluster, _whitened_pod_distances
 
 # load_basis lives next to the DEIM code; adjust import if the path differs
 # try:
-#     from nsrom.rom.deim import load_basis
+#     from nsrom.deim import load_basis
 # except ImportError:  # fallback if the module layout differs
 #     from nsrom.rom import load_basis  # noqa
 
@@ -73,13 +73,13 @@ from nsrom.rom.local import select_cluster, _whitened_pod_distances
 def assemble_F_full(u_full, amp, nu, problem):
     raise NotImplementedError(
         "wire to the training-snapshot assembly, e.g. "
-        "nsrom.rom.deim.assemble_convective_vector(...)")
+        "nsrom.deim.assemble_convective_vector(...)")
 
 
 def assemble_J_full(u_full, amp, nu, problem):
     raise NotImplementedError(
         "wire to the training-snapshot assembly, e.g. "
-        "nsrom.rom.deim.assemble_convective_jacobian_data(...)")
+        "nsrom.deim.assemble_convective_jacobian_data(...)")
 
 
 # ---------------------------------------------------------------------------

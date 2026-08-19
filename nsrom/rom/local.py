@@ -4,8 +4,11 @@ Local reduced-order model construction.
 Per-cluster orchestration of POD bases, reduced operators, and DEIM
 operators, plus online utilities (cluster selection, change-of-basis).
 
+This is the canonical ``nsrom.rom.local`` implementation. The legacy
+``nsrom.local_rom`` module remains a compatibility shim.
+
 Depends on:
-  * nsrom.cluster_building  — for ClusteringResult
+  * nsrom.clustering.building — for ClusteringResult
   * nsrom.rom               — for POD/operator construction
   * nsrom.deim, nsrom.online_operators, nsrom.deim_helpers — for DEIM
 """

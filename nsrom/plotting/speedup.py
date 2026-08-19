@@ -1,8 +1,10 @@
 """
 Speed-up reporting for the bifurcation-diagram sweeps.
 
-Both build_full_diagram_bare (local) and build_full_global_diagram_bare (global)
-return a flat list of records, each carrying (when fom_compute=True):
+This is the canonical ``nsrom.plotting.speedup`` implementation;
+``scripts/speedup_summary.py`` remains its compatibility and CLI wrapper.
+The current ``build_full_diagram_bare`` workflow returns a flat list of records,
+each carrying (when fom_compute=True):
 
     t_rom, t_fom, speedup, converged, fom_converged, branch, Re, amp
 

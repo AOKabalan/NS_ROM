@@ -49,7 +49,7 @@ preflight() {
 
     if ! grep -q "NSROM_REPLAY_REF" nsrom/workflows/local_pipeline.py; then
         echo "PREFLIGHT FAIL: nsrom/workflows/local_pipeline.py has no replay hook."
-        echo "  Apply main_local_replay_patch.py first."
+        echo "  restore the nsrom/bifurcation/replay.py hook in the current pipeline."
         fail=1
     fi
 

@@ -59,7 +59,7 @@ preflight() {
 
     if ! grep -q "NSROM_RUN_TAG" nsrom/workflows/local_pipeline.py; then
         echo "PREFLIGHT FAIL: nsrom/workflows/local_pipeline.py has no env overrides;"
-        echo "  apply main_local_env_patch.py first."
+        echo "  restore NSROM_RUN_TAG handling in nsrom/workflows/local_pipeline.py."
         fail=1
     fi
 
