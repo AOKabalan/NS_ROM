@@ -31,6 +31,9 @@ from .jacobian import build_state_jacobian_pencil
 
 
 __all__ = [
+    "DEFAULT_SYMMETRY_RECOVERY_TOL",
+    "normalized_h1_distance",
+    "classify_symmetry_recovery",
     "compute_fom_indicator",
     "build_reduced_velocity_l2_mass_matrices",
     "find_mu_bracket",
@@ -42,6 +45,82 @@ __all__ = [
     "bisect_pitchfork_rom_from_records",
     "bisect_pitchfork_fom_from_records",
 ]
+
+
+DEFAULT_SYMMETRY_RECOVERY_TOL = 1e-5
+
+
+def normalized_h1_distance(candidate_velocity_dofs,
+                           symmetric_reference_velocity_dofs,
+                           M_u, *, epsilon=None):
+    """Return the candidate's normalized H1 distance from a reference state.
+
+    The normalization is ``max(||u_sym||_H1, epsilon)``. ``M_u`` may be a
+    sparse matrix; it is applied directly and is never densified. Missing or
+    nonfinite states produce ``nan`` rather than physical classification.
+    """
+    if (candidate_velocity_dofs is None
+            or symmetric_reference_velocity_dofs is None):
+        return float("nan")
+
+    candidate = np.asarray(candidate_velocity_dofs, dtype=float).reshape(-1)
+    reference = np.asarray(
+        symmetric_reference_velocity_dofs, dtype=float).reshape(-1)
+    if candidate.shape != reference.shape:
+        raise ValueError(
+            "candidate and symmetric-reference velocity states must have "
+            f"the same shape, got {candidate.shape} and {reference.shape}"
+        )
+    if not np.all(np.isfinite(candidate)) or not np.all(np.isfinite(reference)):
+        return float("nan")
+
+    delta = candidate - reference
+    distance_sq = float(delta @ (M_u @ delta))
+    reference_norm_sq = float(reference @ (M_u @ reference))
+    if (not np.isfinite(distance_sq)
+            or not np.isfinite(reference_norm_sq)
+            or distance_sq < 0.0
+            or reference_norm_sq < 0.0):
+        return float("nan")
+
+    if epsilon is None:
+        epsilon = np.finfo(float).eps
+    epsilon = float(epsilon)
+    if not np.isfinite(epsilon) or epsilon <= 0.0:
+        raise ValueError(f"epsilon must be finite and positive, got {epsilon!r}")
+
+    denominator = max(float(np.sqrt(reference_norm_sq)), epsilon)
+    return float(np.sqrt(distance_sq) / denominator)
+
+
+def classify_symmetry_recovery(candidate_velocity_dofs,
+                               symmetric_reference_velocity_dofs,
+                               M_u,
+                               tolerance=DEFAULT_SYMMETRY_RECOVERY_TOL,
+                               *, converged):
+    """Classify numerical recovery of an independent symmetric solution.
+
+    The boundary is inclusive: a finite normalized H1 distance equal to
+    ``tolerance`` is classified as recovered. A failed solve, missing
+    reference, or nonfinite distance always returns ``(False, nan)`` (or the
+    measured nonfinite value) and never falls back to branch labels or lift.
+    """
+    tolerance = float(tolerance)
+    if not np.isfinite(tolerance) or tolerance < 0.0:
+        raise ValueError(
+            f"symmetry-recovery tolerance must be finite and nonnegative, "
+            f"got {tolerance!r}"
+        )
+    if not converged:
+        return False, float("nan")
+
+    distance = normalized_h1_distance(
+        candidate_velocity_dofs,
+        symmetric_reference_velocity_dofs,
+        M_u,
+    )
+    recovered = bool(np.isfinite(distance) and distance <= tolerance)
+    return recovered, distance
 
 
 # ---------------------------------------------------------------------------
@@ -952,4 +1031,3 @@ def save_critical_curve(curve, path, *, sweep_path=None):
                                 "" if itr is None else itr])
                     n += 1
         print(f"Sweep points saved to {sweep_path}  ({n} rows)")
-

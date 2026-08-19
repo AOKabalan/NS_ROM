@@ -24,11 +24,18 @@ Usage:
         sym_start='low',           # spine at Re_min, then sweep Re up at each amp
     )
 
-trace_symmetric=True adds a third phase: the symmetric trunk is continued in
+trace_symmetric=True adds a reference phase: the symmetric trunk is continued in
 amp from 0 to each extreme and then swept in Re at every amp, over the FULL
 Re_range, with no collapse test and no early break -- so the symmetric sheet
 covers the whole (Re, amp) grid, converged or not. Its records carry
 branch='sym@spine{+,-}' and branch='sym@amp{+/-x.xx}'.
+
+The symmetric sheet is traced before the asymmetric off-axis legs. Compact
+descriptors of its converged reduced states provide exact-parameter references;
+one full reference velocity is reconstructed for each comparison. If
+trace_symmetric=False, the historical lift-collapse heuristic is retained for
+compatibility; it is not used as a symmetry classifier when exact references
+are available.
 
 lock_children=True traces each asym branch in a single cluster (kink-free):
 the symmetric trunk still selects freely, but each asymmetric child and every
@@ -42,6 +49,8 @@ reconstruction (which fixes the branch) and every subsequent point from the
 previous FOM solution (plain continuation) -- which also keeps the FOM on the
 true branch through the near-merge rows where the ROM starts to collapse.
 """
+
+from dataclasses import dataclass
 
 import numpy as np
 import time
@@ -57,6 +66,10 @@ from nsrom.rom.local import (
     _whitened_pod_distances,
 )
 from nsrom.bifurcation.branch_jump import compute_rom_indicator, in_sweep_branch_jump_rom
+from nsrom.bifurcation.detection import (
+    DEFAULT_SYMMETRY_RECOVERY_TOL,
+    classify_symmetry_recovery,
+)
 from nsrom.io.state_store import StateWriter
 # make_thetas lives in sweep.py; import it from there so we reuse the same one
 from nsrom.bifurcation.sweep import make_thetas
@@ -94,6 +107,85 @@ def _norm_M(vec, M):
     return float(np.sqrt(vec @ (M @ vec)))
 
 
+def _parameter_key(Re, amp):
+    """Exact key shared by paths built from the same continuation grids."""
+    return float(Re), float(amp)
+
+
+@dataclass(frozen=True)
+class _SymmetricReference:
+    cluster: int
+    amplitude: float
+    velocity_coeffs: np.ndarray
+
+
+def _store_symmetric_reference(reference_map, Re, amp, solution, cluster):
+    """Store an immutable compact descriptor of a converged ROM state."""
+    coefficients = np.array(
+        solution.velocity_coeffs, dtype=float, copy=True).reshape(-1)
+    if not np.all(np.isfinite(coefficients)):
+        raise RuntimeError(
+            "cannot store nonfinite symmetric reference at "
+            f"Re={Re:g}, amplitude={amp:+g}"
+        )
+    coefficients.setflags(write=False)
+    reference_map[_parameter_key(Re, amp)] = _SymmetricReference(
+        cluster=int(cluster),
+        amplitude=float(amp),
+        velocity_coeffs=coefficients,
+    )
+
+
+def _reconstruct_symmetric_reference(reference, operators, *, Re, amp):
+    """Reconstruct one full reference velocity from its compact descriptor."""
+    if reference.amplitude != float(amp):
+        raise RuntimeError(
+            "symmetric-reference amplitude mismatch at "
+            f"Re={Re:g}: expected {amp:+g}, got {reference.amplitude:+g}"
+        )
+    try:
+        operator = operators[reference.cluster]
+    except KeyError as exc:
+        raise RuntimeError(
+            f"symmetric reference uses unavailable cluster {reference.cluster}"
+        ) from exc
+    if reference.velocity_coeffs.shape != (operator.Z_u.shape[1],):
+        raise RuntimeError(
+            "symmetric-reference coefficient size does not match cluster "
+            f"{reference.cluster} at Re={Re:g}, amplitude={amp:+g}"
+        )
+
+    thetas = make_thetas(reference.amplitude, operator.n_lifting)
+    velocity = (
+        np.einsum('i,ij->j', thetas, operator.lifting_dofs)
+        + operator.Z_u @ reference.velocity_coeffs
+    )
+    if not np.all(np.isfinite(velocity)):
+        raise RuntimeError(
+            "reconstructed symmetric reference is nonfinite at "
+            f"Re={Re:g}, amplitude={amp:+g}"
+        )
+    return velocity
+
+
+def _require_symmetric_reference_coverage(reference_map, Re_values, amp_values):
+    """Fail before asymmetric tracing if any exact grid reference is missing."""
+    expected = {
+        _parameter_key(Re, amp)
+        for amp in amp_values
+        for Re in Re_values
+    }
+    missing = sorted(expected.difference(reference_map))
+    if missing:
+        preview = ", ".join(
+            f"(Re={Re:g}, amp={amp:+g})" for Re, amp in missing[:8])
+        suffix = "" if len(missing) <= 8 else f", ... ({len(missing)} total)"
+        raise RuntimeError(
+            "symmetric-reference coverage is incomplete before asymmetric "
+            f"tracing: {preview}{suffix}"
+        )
+
+
 def _fom_compare(problem, solution_rom, guess, M_u):
     """Run one steady FOM solve from `guess`, compare to the ROM solution.
     Returns (fom_solution, C_L_fom, err_u, t_fom) with err_u the relative
@@ -129,6 +221,9 @@ def _continue(
     lock_cluster=None,           # int -> pin this cluster; None -> select each step
     terminate_on_collapse=False, # asym legs: stop at the merge into symmetric
     collapse_frac=0.0001,           # break if |C_L| < collapse_frac * running peak
+    symmetric_references=None,   # exact (Re, amp) -> compact symmetric state
+    symmetric_reference_sink=None,  # collect converged symmetric states
+    symmetry_recovery_tol=DEFAULT_SYMMETRY_RECOVERY_TOL,
     fom_compute=False,           # also solve the FOM at each point (error + C_L)
     state_writer=None,           # StateWriter -> record every point for replay
     keep_last_converged_guess=False,  # don't seed from a diverged point
@@ -200,6 +295,54 @@ def _continue(
         u_in = np.array(u_coeffs, copy=True)
         p_in = np.array(p_coeffs, copy=True)
         solution_rom = reconstruct_solution(solution, operators[k], problem, amp=amp)
+
+        if solution.converged and symmetric_reference_sink is not None:
+            _store_symmetric_reference(
+                symmetric_reference_sink, Re, amp, solution, k)
+
+        # A failed solve after a nontrivial asymmetric branch has been traced is
+        # the existing merge-stop condition. Stop before any record, history,
+        # state-store, or warm-start mutation.
+        if terminate_on_collapse and not solution.converged and cl_peak > cl_floor:
+            if verbose:
+                print(f"  [merge] {branch_id}: diverged at the merge "
+                      f"Re={Re:.2f} amp={amp:.2f}; Re_c(amp) reached, "
+                      f"stopping leg")
+            break
+
+        symmetry_distance = None
+        if (terminate_on_collapse
+                and solution.converged
+                and symmetric_references is not None):
+            reference = symmetric_references.get(_parameter_key(Re, amp))
+            if reference is None:
+                raise RuntimeError(
+                    "missing exact symmetric reference for asymmetric "
+                    f"continuation at Re={Re:g}, amplitude={amp:+g}"
+                )
+            reference_velocity = _reconstruct_symmetric_reference(
+                reference, operators, Re=Re, amp=amp)
+            recovered, symmetry_distance = classify_symmetry_recovery(
+                solution_rom.velocity.dat.data_ro,
+                reference_velocity,
+                M_u,
+                symmetry_recovery_tol,
+                converged=True,
+            )
+            if not np.isfinite(symmetry_distance):
+                raise RuntimeError(
+                    "invalid exact-reference H1 distance for asymmetric "
+                    f"continuation at Re={Re:g}, amplitude={amp:+g}"
+                )
+            if recovered:
+                if verbose:
+                    print(
+                        f"  [symmetry_recovered] {branch_id}: "
+                        f"Re={Re:.2f} amp={amp:+.2f} "
+                        f"distance={symmetry_distance:.6e} "
+                        f"tolerance={symmetry_recovery_tol:.6e}; stopping leg"
+                    )
+                break
 
         # --- optional debug snapshot (OFF by default) ----------------------
         # This used to be unconditional and it *aborted* every amp=0 leg at
@@ -279,6 +422,8 @@ def _continue(
         record = {'branch': branch_id, 'Re': Re, 'amp': amp, 'cluster': k,
                   'converged': solution.converged, 'iterations': solution.iterations,
                   't_rom': t_rom, 'mu': mu}
+        if symmetry_distance is not None:
+            record['symmetry_distance_H1'] = symmetry_distance
         fom = None
         cl_fom = err_u = t_fom = None
         if solution.converged:
@@ -288,6 +433,24 @@ def _continue(
             record['C_D'] = forces.drag
             record['C_L'] = forces.lift
             record['C_L_rom'] = float(forces.lift)
+
+            cl_abs = abs(record['C_L'])
+            cl_peak = max(cl_peak, cl_abs)
+
+            # Compatibility path for workflows that intentionally omit the
+            # symmetric sheet. This historical lift heuristic is not used when
+            # exact symmetric references are present.
+            if (terminate_on_collapse
+                    and symmetric_references is None
+                    and cl_peak > cl_floor
+                    and (cl_abs < cl_floor
+                         or cl_abs < collapse_frac * cl_peak)):
+                if verbose:
+                    print(f"  [merge:legacy_lift] {branch_id}: C_L collapsed at "
+                          f"Re={Re:.2f} amp={amp:.2f} "
+                          f"(|C_L|={cl_abs:.4f} < {collapse_frac:.2f}*"
+                          f"{cl_peak:.4f}); stopping leg")
+                break
 
             # --- optional FOM comparison at this exact (Re, amp) on this branch ---
             if fom_compute:
@@ -343,32 +506,6 @@ def _continue(
                 fom_iters=(None if fom is None else int(fom.num_iterations)),
             )
         records.append(record)
-
-        # --- C_L-collapse termination (asymmetric legs only) --------------
-        # Below the amp-shifted bifurcation point Re_c(amp) the asymmetric
-        # branch ceases to exist and merges into the symmetric one. Detect
-        # that merge and stop: the symmetric trunk already covers Re < Re_c.
-        if terminate_on_collapse:
-            if solution.converged:
-                cl_abs = abs(record['C_L'])
-                cl_peak = max(cl_peak, cl_abs)
-                if cl_peak > cl_floor and (
-                        cl_abs < cl_floor or cl_abs < collapse_frac * cl_peak):
-                    if verbose:
-                        print(f"  [merge] {branch_id}: C_L collapsed at "
-                              f"Re={Re:.2f} amp={amp:.2f} "
-                              f"(|C_L|={cl_abs:.4f} < {collapse_frac:.2f}*"
-                              f"{cl_peak:.4f}); Re_c(amp) reached, stopping leg")
-                    records.pop()          # drop the merged (symmetric) point
-                    break
-            else:
-                if cl_peak > cl_floor:
-                    if verbose:
-                        print(f"  [merge] {branch_id}: diverged at the merge "
-                              f"Re={Re:.2f} amp={amp:.2f}; Re_c(amp) reached, "
-                              f"stopping leg")
-                    records.pop()          # drop the non-converged point
-                    continue
 
         # --- history update ---
         # On a leg with no stop condition a single divergence would otherwise
@@ -452,6 +589,8 @@ def _offaxis_grid(
     problem, initial_solution, M_u, M_p, M_uu_red,
     *, terminate_on_collapse, mode, eps=0.8, jump_offset=0,
     lock_cluster=None, keep_last_converged_guess=False,
+    symmetric_references=None, symmetric_reference_sink=None,
+    symmetry_recovery_tol=DEFAULT_SYMMETRY_RECOVERY_TOL,
     fom_compute=False, verbose=True,state_writer=None,
 ):
     """Walk amp 0 -> extreme at Re = spine_Re, then continue in Re along
@@ -483,6 +622,9 @@ def _offaxis_grid(
             mode = mode,
             eps=eps, jump_offset=jump_offset, lock_cluster=lock_cluster,
             keep_last_converged_guess=keep_last_converged_guess,
+            symmetric_references=symmetric_references,
+            symmetric_reference_sink=symmetric_reference_sink,
+            symmetry_recovery_tol=symmetry_recovery_tol,
             fom_compute=fom_compute,state_writer=state_writer, verbose=verbose)
         out += spine_records
 
@@ -503,6 +645,9 @@ def _offaxis_grid(
                 eps=eps, jump_offset=jump_offset, lock_cluster=lock_cluster,
                 terminate_on_collapse=terminate_on_collapse,
                 keep_last_converged_guess=keep_last_converged_guess,
+                symmetric_references=symmetric_references,
+                symmetric_reference_sink=symmetric_reference_sink,
+                symmetry_recovery_tol=symmetry_recovery_tol,
                 fom_compute=fom_compute, state_writer=state_writer, verbose=verbose)
             out += leg_records
 
@@ -526,25 +671,27 @@ def build_full_diagram_bare(
     fom_field_stride=1,
     fom_field_dtype='float32',
     trace_symmetric=True,       # True -> also carry the symmetric trunk off-axis
-    sym_start='high',            # 'low': spine at Re_min then sweep Re up (robust)
+    sym_start='low',             # 'low': spine at Re_min then sweep Re up (robust)
                                 # 'high': spine at Re_max then sweep Re down
     sym_lock_cluster=None,      # int -> pin every symmetric off-axis leg to that cluster
+    symmetry_recovery_tol=DEFAULT_SYMMETRY_RECOVERY_TOL,
     debug_snapshot=None,        # (Re, amp) -> dump the reconstructed field there
     verbose=True,
 ):
     """
     Phase 1: amp=0 -> sym + asym+1 + asym-1.
-    Phase 2: for each asym anchor, walk amp 0->extreme at Re_max (spine),
-             then sweep Re down at each amp stop; the Re-down legs terminate at
-             the amp-shifted merge into symmetric (C_L collapse).
-    Phase 3 (trace_symmetric=True): same off-axis grid, but seeded from the
-             symmetric trunk and with NO termination condition -- every amp in
-             amp_values gets the complete Re_range, converged or not.
+    Phase 2 (trace_symmetric=True): trace the complete symmetric off-axis sheet
+             and retain compact converged states as exact references.
+    Phase 3: for each asym anchor, walk amp 0->extreme at Re_max (spine), then
+             sweep Re down at each amp stop. With symmetric references, each
+             leg stops when its normalized H1 distance is <=
+             symmetry_recovery_tol. Without the symmetric sheet, the legacy
+             lift-collapse heuristic is retained for compatibility.
 
     sym_start controls where the symmetric amp-spine sits:
       'low'  -- spine at Re_min, then each amp column sweeps Re upward. The
                 low-Re solution is unique and stable, so the amp continuation
-                and the subsequent upward sweep are both well-posed. Default.
+                and the subsequent upward sweep are both well-posed.
       'high' -- spine at Re_max, then each column sweeps Re downward, mirroring
                 the asymmetric phase. Riskier: above Re_c the symmetric state is
                 unstable and amp!=0 unfolds the pitchfork, so the continuation
@@ -580,7 +727,10 @@ def build_full_diagram_bare(
                   'n_Re': len(Re_list),
                   'amp_values': [float(a) for a in amp_values],
                   'eps': eps, 'jump_offset': jump_offset,
-                  'sym_start': sym_start, 'lock_children': lock_children},
+                  'sym_start': sym_start, 'lock_children': lock_children,
+                  'symmetry_recovery_tol': symmetry_recovery_tol,
+                  'exact_symmetry_references': bool(trace_symmetric),
+                  'symmetry_reference_storage': 'reduced_coefficients'},
         )
     all_records = []
 
@@ -595,23 +745,10 @@ def build_full_diagram_bare(
         state_writer=state_writer)
     all_records += base_records
 
-    # ---- Phase 2: off-axis grid, asymmetric children (terminates at Re_c) ----
-    if anchors:
-        for base_id, anchor in anchors:
-            all_records += _offaxis_grid(
-                anchor, base_id, Re_max, Re_down, neg, pos,
-                clustering, operators, deim_ops_dict, submesh_deims,
-                problem, initial_solution, M_u, M_p, M_uu_red,
-                terminate_on_collapse=True,
-                mode =mode,
-                eps=eps, jump_offset=jump_offset,
-                fom_compute=fom_compute, verbose=verbose,
-                state_writer=state_writer)
-    elif verbose:
-        print("  [bare] no asymmetric anchors at amp=0; symmetric branch only")
-
-    # ---- Phase 3: off-axis grid, symmetric trunk (no termination) ----
+    # ---- Phase 2: independent symmetric off-axis reference sheet ----------
+    symmetric_references = None
     if trace_symmetric and (neg or pos):
+        symmetric_references = {}
         if sym_start == 'low':
             spine_Re, sweep_list = Re_min, Re_up
         elif sym_start == 'high':
@@ -636,8 +773,36 @@ def build_full_diagram_bare(
             eps=eps, jump_offset=jump_offset,
             lock_cluster=sym_lock_cluster,
             keep_last_converged_guess=True,
+            symmetric_reference_sink=symmetric_references,
+            symmetry_recovery_tol=symmetry_recovery_tol,
             fom_compute=fom_compute, verbose=verbose,
             state_writer=state_writer)
+
+        if anchors:
+            try:
+                _require_symmetric_reference_coverage(
+                    symmetric_references, Re_down, neg + pos)
+            except Exception:
+                if state_writer is not None:
+                    state_writer.close()
+                raise
+
+    # ---- Phase 3: asymmetric children (terminate at numerical recovery) ---
+    if anchors:
+        for base_id, anchor in anchors:
+            all_records += _offaxis_grid(
+                anchor, base_id, Re_max, Re_down, neg, pos,
+                clustering, operators, deim_ops_dict, submesh_deims,
+                problem, initial_solution, M_u, M_p, M_uu_red,
+                terminate_on_collapse=True,
+                mode=mode,
+                eps=eps, jump_offset=jump_offset,
+                symmetric_references=symmetric_references,
+                symmetry_recovery_tol=symmetry_recovery_tol,
+                fom_compute=fom_compute, verbose=verbose,
+                state_writer=state_writer)
+    elif verbose:
+        print("  [bare] no asymmetric anchors at amp=0; symmetric branch only")
     if state_writer is not None:
         state_writer.close()
     return all_records
