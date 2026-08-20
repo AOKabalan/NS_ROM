@@ -45,15 +45,23 @@ PYTEST      ?= pytest
 MPLBACKEND  ?= Agg
 PAPER       ?= $(HOME)/01_research/my_paper/Ali_Paper/paper
 
-# The mass matrices carry the inner-product tag: nsrom.io.mass writes
-# M_u_<ip>.npz / M_p_<ip>.npz, and mass/mass_meta.json records the paths.
+# Each mass matrix is tagged with the norm ITS space uses, and the two spaces
+# do NOT agree: clustering/building.py assembles M_u in cfg.inner_product_type
+# (H1) and M_p in L2, hardcoded. So there is no single tag to build both names
+# from -- deriving them from one INNER_PRODUCT asked for mass/M_p_H1.npz, which
+# does not exist. Glob instead, so this tracks the files rather than a naming
+# scheme it can get wrong; mass/mass_meta.json is not consulted because its
+# recorded paths predate the writer fix and still say M_p_H1.npz.
+#
 # These must be the matrices main_local.py used -- rebuilding them would change
 # the norm every error in the paper is quoted in.
-INNER_PRODUCT ?= H1
-MASS_U        ?= mass/M_u_$(INNER_PRODUCT).npz
-MASS_P        ?= mass/M_p_$(INNER_PRODUCT).npz
+MASS_DIR      ?= mass
+MASS_U        ?= $(firstword $(wildcard $(MASS_DIR)/M_u_*.npz))
+MASS_P        ?= $(firstword $(wildcard $(MASS_DIR)/M_p_*.npz))
 
-# layout.py: local_rom/K<K>_<ip>_tol<pod_tol:%g>. E1 is K=4, H1, tol 1e-8.
+# The ROM cache is a different question: layout.py names it from the velocity
+# inner product alone, local_rom/K<K>_<ip>_tol<pod_tol:%g>. E1 is K=4, H1, 1e-8.
+INNER_PRODUCT ?= H1
 LOCAL_ROM_E1  ?= local_rom/K4_$(INNER_PRODUCT)_tol1e-08
 
 OUT    := render/out
@@ -246,6 +254,10 @@ endif
 #
 # Regenerate deliberately:  make point-errors
 point-errors:
+	@test -n "$(MASS_U)" -a -n "$(MASS_P)" || { printf '%s\n' \
+	  "no mass matrices found in $(MASS_DIR)/ (looked for M_u_*.npz, M_p_*.npz)." \
+	  "  they are written by main_local.py with NSROM_DUMP_MASS=1," \
+	  "  or set MASS_U= and MASS_P= explicitly." ; exit 1; }
 	$(MPIEXEC) -n 1 $(PYTHON) scripts/compute_point_errors.py \
 	    --state-dir states/E1_K4_tensor \
 	    --local-rom $(LOCAL_ROM_E1) \

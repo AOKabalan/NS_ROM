@@ -327,8 +327,8 @@ def norm_label(mass_meta="mass/mass_meta.json", which="M_u"):
                 m = json.load(fh)
             rec = (m.get("matrices", {}) or {}).get(which, {}) or {}
             lc = rec.get("l2_comparison")
-            if isinstance(lc, dict) and "is_l2" in lc:
-                return "L^2" if lc["is_l2"] else "H^1"
+            if isinstance(lc, dict) and "is_l2_mass" in lc:
+                return "L^2" if lc["is_l2_mass"] else "H^1"
             v = str(rec.get("verdict", "")).lower()
             if "gradient" in v:
                 return "H^1"

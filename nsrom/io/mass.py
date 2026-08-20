@@ -37,7 +37,9 @@ Run it without paying for a sweep:
     NSROM_DUMP_MASS=1 NSROM_RUN_SWEEP=0 NSROM_K=4 NSROM_POD_TOL=1e-8 \
         python scripts/main_local.py
 
-Writes mass/M_u_<ip>.npz, mass/M_p_<ip>.npz and mass/mass_meta.json, with the
+Writes mass/M_u_<norm>.npz, mass/M_p_<norm>.npz and mass/mass_meta.json, each
+file tagged with the norm ITS space uses (velocity cfg.inner_product_type,
+pressure always L2), with the
 inner-product tag in the filename so two conventions can never be confused.
 """
 
@@ -172,10 +174,10 @@ def _identify(name, A, problem=None):
         except Exception as exc:  # noqa: BLE001
             rec['l2_comparison'] = f"skipped: {type(exc).__name__}: {exc}"
         lc = rec['l2_comparison']
-        if isinstance(lc, dict) and 'is_l2' in lc:
+        if isinstance(lc, dict) and 'is_l2_mass' in lc:
             rec['verdict'] = (
                 "L2 mass matrix (verified against a freshly assembled one)"
-                if lc['is_l2'] else
+                if lc['is_l2_mass'] else
                 "NOT the L2 mass matrix (verified); "
                 + rec['verdict'].split(':')[0])
     return rec
@@ -209,12 +211,24 @@ def _compare_to_l2(name, A, problem):
 # ---------------------------------------------------------------------------
 
 def dump_mass_matrices(mats, outdir='mass', inner_product='unknown',
-                       problem=None, verbose=True):
-    """Persist each matrix as CSR .npz and write an identification report."""
+                       norms=None, problem=None, verbose=True):
+    """Persist each matrix as CSR .npz and write an identification report.
+
+    ``norms`` maps a matrix name to the norm ITS space uses, and each file is
+    tagged with that. The velocity and pressure spaces do not have to agree --
+    build_energy_snapshots assembles M_u in cfg.inner_product_type and M_p in
+    L2, always -- so a single ``inner_product`` label for the whole dict names
+    one of the two files wrong. ``inner_product`` remains the default for any
+    matrix ``norms`` does not mention, and the report records it per matrix.
+    """
     from scipy.sparse import save_npz
 
     os.makedirs(outdir, exist_ok=True)
-    tag = str(inner_product).replace('/', '-').replace(' ', '')
+    norms = dict(norms or {})
+
+    def _tag(v):
+        return str(v).replace('/', '-').replace(' ', '')
+
     meta = {'inner_product_type': str(inner_product), 'matrices': {}}
 
     for name, M in mats.items():
@@ -222,10 +236,12 @@ def dump_mass_matrices(mats, outdir='mass', inner_product='unknown',
             meta['matrices'][name] = {'error': 'None'}
             continue
         A, source = to_csr(M)
-        path = os.path.join(outdir, f"{name}_{tag}.npz")
+        norm = norms.get(name, inner_product)
+        path = os.path.join(outdir, f"{name}_{_tag(norm)}.npz")
         save_npz(path, A)
         rec = _identify(name, A, problem=problem)
         rec['source_type'] = source
+        rec['inner_product'] = str(norm)
         rec['path'] = path
         rec['size_mb'] = round(os.path.getsize(path) / 1e6, 4)
         meta['matrices'][name] = rec

@@ -416,6 +416,9 @@ def main():
         dump_mass_matrices({'M_u': M_u, 'M_p': M_p},
                            outdir=_env_str('NSROM_MASS_DIR', 'mass'),
                            inner_product=cfg.inner_product_type,
+                           # mirrors build_energy_snapshots: velocity in the
+                           # configured inner product, pressure always L2
+                           norms={'M_u': cfg.inner_product_type, 'M_p': 'L2'},
                            problem=problem)
     # --- Clustering ---
     print("\n--- Clustering ---")
