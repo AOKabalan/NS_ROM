@@ -70,7 +70,7 @@ def tab_params(args, dims, macros):
     r4 = dims.get((4, 1e-8))
     r1 = dims.get((1, 1e-8))
     rows = [
-        [r"Domain", CHECK],
+        [r"Domain", r"$[-6, 20]\times[-6, 6]$"],
         [r"Finite element pair", r"$\mathbb{P}_2/\mathbb{P}_1$ (Taylor--Hood)"],
         [r"Velocity DOFs", "72{,}378"],
         [r"Pressure DOFs", "9{,}161"],
