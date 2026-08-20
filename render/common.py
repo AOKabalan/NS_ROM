@@ -24,12 +24,11 @@ import sys
 import numpy as np
 import pandas as pd
 
-# scripts are invoked from the repo root; put it (and scripts/) on the path so
-# both an installed nsrom and an in-tree one resolve
+# renderers are invoked from the repo root; put it on the path so an in-tree
+# nsrom resolves as readily as an installed one
 _ROOT = os.getcwd()
-for _p in (os.path.join(_ROOT, "scripts"), _ROOT):
-    if os.path.isdir(_p) and _p not in sys.path:
-        sys.path.insert(0, _p)
+if os.path.isdir(_ROOT) and _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 BRANCH_RE = re.compile(r"^(?P<kind>[^@]+)@amp(?P<amp>[-+]?\d*\.?\d+)\s*$")
 
@@ -43,7 +42,7 @@ def state_dir(tag, root="states"):
 
 def load_run(tag, root="states", converged_only=False):
     """StateStore index -> DataFrame with parsed branch kind and amplitude."""
-    from state_store import StateStore
+    from nsrom.io.state_store import StateStore
 
     sd = state_dir(tag, root)
     store = StateStore(sd)

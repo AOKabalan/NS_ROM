@@ -7,7 +7,7 @@ case functions here, so captured goldens and asserted values never drift.
 Design notes
 ------------
 * Importing this module triggers the (slow) Firedrake import transitively via
-  `nsrom.rom` / `nsrom.cluster_building`. That cost is paid ONCE per process.
+  `nsrom.rom` / `nsrom.clustering.building`. That cost is paid ONCE per process.
 * Tier A cases run on saved data only (snapshot DOFs + saved H1 mass matrix),
   no Firedrake *objects* are built — only the import is unavoidable.
 * Tier B cases build real Firedrake objects (mesh, spaces, solves).

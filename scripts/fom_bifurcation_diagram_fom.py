@@ -32,7 +32,7 @@ from nsrom.navier_stokes import (
     save_solution,
     compute_forces,
 )
-from nsrom.snapshot_collection import load_snapshot_dofs
+from nsrom.snapshots.collection import load_snapshot_dofs
 from nsrom.lifting_functions import load_lifting_functions
 from nsrom.bifurcation.sweep_study import (
     sweep_symmetric_branch,

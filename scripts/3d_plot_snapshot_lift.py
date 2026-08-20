@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import os
+import sys
 
 import numpy as np
 import matplotlib
@@ -27,8 +28,10 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 from matplotlib.lines import Line2D
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                os.pardir, "render"))
 try:
-    from nsrom.plotting.style import set_style, resolve_width, SINGLE_COL, DOUBLE_COL
+    from style import set_style, resolve_width, SINGLE_COL, DOUBLE_COL
 except ImportError:
     SINGLE_COL, DOUBLE_COL = 3.40, 7.00
 

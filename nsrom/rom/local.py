@@ -5,7 +5,7 @@ Per-cluster orchestration of POD bases, reduced operators, and DEIM
 operators, plus online utilities (cluster selection, change-of-basis).
 
 This is the canonical ``nsrom.rom.local`` implementation. The legacy
-``nsrom.local_rom`` module remains a compatibility shim.
+``nsrom.local_rom`` compatibility shim has been retired.
 
 Depends on:
   * nsrom.clustering.building — for ClusteringResult

@@ -489,7 +489,6 @@ def main():
     else:
         run_single_point(clustering, operators, deim_ops_dict, problem,
                          initial_solution, M_u, M_p)
-    # from state_store import StateStore
     # s = StateStore("states/K4_tensor"); s.summary()
     # print(s[0])
 def run_replay(clustering, operators, deim_ops_dict, problem,

@@ -47,7 +47,6 @@ import sys
 import numpy as np
 import pandas as pd
 
-sys.path.append("scripts")
 from nsrom.io.state_store import StateStore  # noqa: E402
 
 

@@ -19,17 +19,25 @@ Two ways to supply the cells, in order of preference:
 
 Requires (both paths): meshio? no -- see MESH LOADING note. matplotlib, numpy.
 """
+import os
+import sys
+
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 from matplotlib.patches import Circle, FancyArrowPatch, Rectangle
 from matplotlib.collections import PolyCollection
-import matplotlib as mpl
 
-mpl.rcParams.update({
-    "font.size": 9, "font.family": "serif",
-    "mathtext.fontset": "cm", "axes.linewidth": 0.6,
-})
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import style  # noqa: E402
+
+style.set_style()
+
+# Schematic accents, deliberately NOT the branch palette: nothing in this
+# figure is a solution branch, so reusing C_POS / C_NEG would imply a meaning
+# the panels do not carry.
 ACCENT, ACCENT2, GREY, DARK = "#c0392b", "#2471a3", "#c2c2c2", "#2b2b2b"
 
 # ====================== CONFIG ======================
@@ -40,6 +48,7 @@ REDUCED_CELLS_NPY = "reduced_cells.npy"        # used only if USE_FIREDRAKE = Fa
 REYNOLDS_INIT     = 100.0
 AMPLITUDE_INIT    = 0.0
 OUT_STEM          = "hyperreduction_pinball"
+OUTDIR            = "render/out"
 # ====================================================
 
 
@@ -312,6 +321,8 @@ if __name__ == "__main__":
         print("!! no cylinders found; set CYLINDERS_OVERRIDE at top of file.")
 
     fig = build_figure(pts, tris, cyl, selected)
-    fig.savefig(f"{OUT_STEM}.pdf", bbox_inches="tight")
-    fig.savefig(f"{OUT_STEM}.png", dpi=160, bbox_inches="tight")
-    print(f"saved {OUT_STEM}.pdf / .png")
+    os.makedirs(OUTDIR, exist_ok=True)
+    stem = os.path.join(OUTDIR, OUT_STEM)
+    fig.savefig(f"{stem}.pdf", bbox_inches="tight")
+    fig.savefig(f"{stem}.png", dpi=160, bbox_inches="tight")
+    print(f"  wrote {stem}.pdf / .png")
