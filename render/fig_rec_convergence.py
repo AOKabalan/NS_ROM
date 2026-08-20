@@ -28,7 +28,7 @@ manufactures one. That is the sharpest statement in the subsection about basis
 adequacy for detection, and it is invisible in panel (a), which plots only the
 first crossing.
 
-    python section_6_figures/fig_rec_convergence.py --width 0.7linewidth
+    python render/fig_rec_convergence.py --width 0.7linewidth
 """
 
 import os
@@ -38,7 +38,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 def tighten(plt, on=True):
     """setup_style is sized for a ONE-panel figure. A 3-across layout needs

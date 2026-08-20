@@ -8,7 +8,7 @@ is the reference every reduced quantity in Section 6 is measured against, so it
 plots the FULL-ORDER lift only. No reduced curve appears here -- that overlay is
 fig:rom_overlay, and mixing them would make the reference self-referential.
 
-    python section_6_figures/fig_fom_diagram.py --outdir section_6_figures/out
+    python render/fig_fom_diagram.py --outdir render/out
 
 WHERE Re_c(0) COMES FROM.
 The full-order generalised eigensweep (G1) does not exist, so the crossing is
@@ -30,7 +30,7 @@ robustness paragraph in 6.2). No stability claim is read off the reduced mu
 here; doing so would import a reduced quantity into the full-order reference.
 
 VELOCITY-FIELD INSETS.
-This script does not render fields. _common's design rule is that figure scripts
+This script does not render fields. common's design rule is that figure scripts
 plot and anything needing stored fields is computed elsewhere; rendering a
 Firedrake function needs the mesh and the solver environment, which a plotting
 script has no business loading. Supply pre-rendered images:
@@ -49,7 +49,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 
 def rec_zero(df, args):

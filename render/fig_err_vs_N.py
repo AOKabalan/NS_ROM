@@ -17,7 +17,7 @@ Two things this script refuses to fake:
     comparable. The script compares point counts and amplitude sets across the
     family and refuses to plot mismatched members unless --allow-mixed-grids.
 
-    python section_6_figures/fig_err_vs_N.py
+    python render/fig_err_vs_N.py
 """
 
 import os
@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 DEFAULT_FAMILY = [
     ("E7_K4_tensor_tol1e-4", 1e-4),

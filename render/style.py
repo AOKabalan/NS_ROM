@@ -1,8 +1,9 @@
 """
 Single source of truth for the paper's figure style.
 
-Every plotting script imports from here, so changing a font, size, or colour
-in ONE place and re-running `make_figures.py` restyles every figure at once.
+Every renderer in render/ imports from here, so changing a font, size, or
+colour in ONE place and re-running `make figures` restyles every figure at
+once.
 
 The knobs you are most likely to touch are grouped at the top.
 """
@@ -44,6 +45,10 @@ CLUSTER_COLORS = [
     "#F0E442",  # yellow
     "#000000",  # black
 ]
+
+# Colour maps. Both perceptually uniform and colour-vision-deficiency safe.
+CMAP_SEQ = "cividis"      # sequential   (error magnitude, Reynolds number)
+CMAP_DIV = "RdBu_r"       # diverging    (signed residuals, mu)
 
 
 # named presets accepted by resolve_width()

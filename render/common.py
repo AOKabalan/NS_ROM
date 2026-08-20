@@ -1,5 +1,5 @@
 """
-_common.py -- shared data access, styling and LaTeX emission for the Section 6
+common.py -- shared data access, styling and LaTeX emission for the paper
 figure scripts.
 
 Design rules, matching the handoff note:
@@ -340,77 +340,44 @@ def norm_label(mass_meta="mass/mass_meta.json", which="M_u"):
     return r"\ast"      # deliberately wrong-looking: forces the norm to be resolved
 
 
-_STYLE = None
+# ---------------------------------------------------------------------------
+# style -- every knob lives in render/style.py; nothing is mirrored here
+# ---------------------------------------------------------------------------
 
-# Mirrors nsrom.plotting.style so a script still runs outside the venv, but the
-# real module always wins. Keep in sync only if style.py grows a new name.
-_FALLBACK = {
-    "C_POS": "#1f4e79", "C_NEG": "#b3541e", "C_SYM": "0.45",
-    "C_GLOBAL": "0.15",
-    "CLUSTER_COLORS": ["#0072B2", "#E69F00", "#009E73", "#CC79A7",
-                       "#56B4E9", "#F0E442", "#000000"],
-    "LINEWIDTH": 6.22, "SINGLE_COL": 3.40, "DOUBLE_COL": 7.00,
-    # perceptually uniform and colour-vision-deficiency safe; add these to
-    # style.py to make them the single source of truth like the rest
-    "CMAP_SEQ": "cividis", "CMAP_DIV": "RdBu_r",
-}
-
-
-def _style_module():
-    global _STYLE
-    if _STYLE is None:
-        try:
-            from nsrom.plotting import style as s
-            _STYLE = s
-        except Exception:  # noqa: BLE001
-            _STYLE = False
-    return _STYLE or None
+import style  # noqa: E402  (render/ is on sys.path via the caller's insert)
 
 
 def P(name):
-    """Palette / geometry constant, preferring nsrom.plotting.style."""
-    s = _style_module()
-    if s is not None and hasattr(s, name):
-        return getattr(s, name)
-    return _FALLBACK.get(name)
+    """Palette / geometry constant from render/style.py."""
+    return getattr(style, name)
 
 
 def branch_color(kind):
     """Semantic colour: the two asymmetric branches by sign, symmetric grey."""
     k = str(kind)
     if k.startswith("sym"):
-        return P("C_SYM")
+        return style.C_SYM
     if "+" in k:
-        return P("C_POS")
+        return style.C_POS
     if "-" in k:
-        return P("C_NEG")
-    return P("C_GLOBAL")
+        return style.C_NEG
+    return style.C_GLOBAL
 
 
 def cluster_color(k):
-    cc = P("CLUSTER_COLORS")
-    return cc[int(k) % len(cc)]
+    return style.CLUSTER_COLORS[int(k) % len(style.CLUSTER_COLORS)]
 
 
 def seq_cmap():
-    return P("CMAP_SEQ")
+    return style.CMAP_SEQ
 
 
 def div_cmap():
-    return P("CMAP_DIV")
+    return style.CMAP_DIV
 
 
 def resolve_width(spec):
-    """Delegate to style.resolve_width so the presets stay in one place."""
-    s = _style_module()
-    if s is not None and hasattr(s, "resolve_width"):
-        return float(s.resolve_width(spec))
-    widths = {"single": P("SINGLE_COL"), "double": P("DOUBLE_COL"),
-              "linewidth": P("LINEWIDTH"),
-              "0.7linewidth": 0.7 * P("LINEWIDTH")}
-    if isinstance(spec, str) and spec in widths:
-        return float(widths[spec])
-    return float(spec)
+    return float(style.resolve_width(spec))
 
 
 def figsize(width_spec, aspect=0.62):
@@ -424,32 +391,7 @@ def setup_style(usetex=False):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-
-    s = _style_module()
-    if s is not None and hasattr(s, "set_style"):
-        try:
-            s.set_style(usetex=usetex)
-        except TypeError:
-            s.set_style(usetex)
-        return plt
-
-    print("  [style] nsrom.plotting.style unavailable -- using the fallback "
-          "mirror; run inside the venv so figures match the manuscript")
-    plt.rcParams.update({
-        "font.family": "serif", "font.size": 9,
-        "axes.labelsize": 10, "axes.titlesize": 10,
-        "xtick.labelsize": 8, "ytick.labelsize": 8, "legend.fontsize": 8,
-        "legend.frameon": False, "axes.linewidth": 0.8,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.top": True, "ytick.right": True,
-        "xtick.minor.visible": True, "ytick.minor.visible": True,
-        "lines.linewidth": 1.2, "lines.markersize": 5,
-        "savefig.dpi": 600, "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.02,
-        "pdf.fonttype": 42, "ps.fonttype": 42,
-    })
-    plt.rcParams.update({"text.usetex": True} if usetex
-                        else {"mathtext.fontset": "cm"})
+    style.set_style(usetex=usetex)
     return plt
 
 
@@ -463,7 +405,7 @@ def save(fig, outdir, name, png=False):
         print(f"  wrote {p}")
 
 
-def base_parser(description, default_out="section_6_figures/out"):
+def base_parser(description, default_out="render/out"):
     import argparse
     p = argparse.ArgumentParser(description=description)
     p.add_argument("--outdir", default=default_out)

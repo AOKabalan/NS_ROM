@@ -13,8 +13,8 @@ product from float64 fields). Pressure errors come from compute_point_errors.py
 (err_p_M, same convention, but recovered from float32-stored fields -- see the
 noise-floor note that script prints).
 
-    python section_6_figures/fig_branch_errors.py \
-        --errors paper_data/point_errors_E1.csv --outdir section_6_figures/out
+    python render/fig_branch_errors.py \
+        --errors paper_data/point_errors_E1.csv --outdir render/out
 """
 
 import os
@@ -24,7 +24,7 @@ import numpy as np
 from matplotlib.gridspec import GridSpec
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 
 def panel(ax, d, col, label, crit=None, vmin=None, vmax=None):

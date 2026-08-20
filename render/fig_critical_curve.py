@@ -13,7 +13,7 @@ fig:critical_curve  Re_c(a) from the mu zero crossings, one per amplitude column
 
 fig:mu_sweeps  mu against Re at representative amplitudes, no extraction needed.
 
-    python section_6_figures/fig_critical_curve.py --which both
+    python render/fig_critical_curve.py --which both
 """
 
 import os
@@ -22,7 +22,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 
 def plot_critical_curve(plt, args, df, crit, proxy):

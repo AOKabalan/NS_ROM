@@ -8,8 +8,8 @@ fig_critical_curve.py. So this script reads that script's output rather than
 recomputing anything, which also guarantees the table and fig:critical_curve
 cannot disagree.
 
-    python section_6_figures/fig_critical_curve.py --which both
-    python section_6_figures/tab_critcurve.py
+    python render/fig_critical_curve.py --which both
+    python render/tab_critcurve.py
 
 WHAT THIS TABLE VALIDATES AGAINST.
 The draft says "full-order bisection". There is no bisection driver -- that is
@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 CHECK = r"\CHECK{}"
 
@@ -55,7 +55,7 @@ def pick_amps(d, n, always):
 
 def main():
     p = C.base_parser(__doc__)
-    p.add_argument("--csv", default="section_6_figures/out/critical_curve.csv")
+    p.add_argument("--csv", default="render/out/critical_curve.csv")
     p.add_argument("--n-amps", type=int, default=5)
     p.add_argument("--flag-brackets", type=float, default=3.0,
                    help="disagreement above this many brackets marks the row "

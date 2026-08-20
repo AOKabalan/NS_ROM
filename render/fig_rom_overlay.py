@@ -22,7 +22,7 @@ the panel above it because a parity plot needs an equal aspect and therefore a
 narrower box than a full-width strip. --residual brings it back, against Re, for
 anyone who wants to inspect the structure.
 
-    python section_6_figures/fig_rom_overlay.py --outdir section_6_figures/out
+    python render/fig_rom_overlay.py --outdir render/out
 """
 
 import os
@@ -31,7 +31,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 
 def main():

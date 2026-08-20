@@ -15,7 +15,7 @@ Deliberately NOT emitted:
                     column is written by fig_critical_curve.py, so build that
                     table from critical_curve.csv once the wording is settled
 
-    python section_6_figures/make_tables.py --outdir section_6_figures/out
+    python render/make_tables.py --outdir render/out
 """
 
 import os
@@ -25,14 +25,14 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 CHECK = r"\CHECK{}"
 
 # Macro names are written into the prose by hand, and a LaTeX control sequence is
 # letters only -- so they cannot be derived from run tags. "E1" would give
 # \SpeedupE1, which tokenises as \SpeedupE followed by 1 and takes the whole
-# generated file down with it. Name them explicitly instead. _common.write_macros
+# generated file down with it. Name them explicitly instead. common.write_macros
 # now refuses to emit an invalid name, so this cannot regress silently.
 HR_LABEL = {"E10_K4_tensor_near": "Tensor",
             "E4_K4_deim_tol8": "Deim",
@@ -390,7 +390,7 @@ def tab_cost(args, macros):
 
 
 def main():
-    p = C.base_parser(__doc__, default_out="section_6_figures/out")
+    p = C.base_parser(__doc__, default_out="render/out")
     p.add_argument("--hr-seed", choices=["fom", "stored", "both"], default="fom",
                    help="which replay pair tab:hyperreduction shows. 'fom' "
                         "(default) is the full-order-seeded pair, which is also "
@@ -433,7 +433,7 @@ def main():
     print("\n  Add to the preamble, and REMOVE the no-op definition so an "
           "unfilled cell is visible:\n"
           r"    \newcommand{\CHECK}[1]{\textbf{[CHECK: #1]}}" "\n"
-          r"    \input{section_6_figures/out/section6_numbers}")
+          r"    \input{render/out/section6_numbers}")
 
 
 if __name__ == "__main__":

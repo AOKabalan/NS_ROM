@@ -37,7 +37,7 @@ What this script refuses to do:
     Those points hit the cap by construction and are handled in panel (a) as the
     height of the plateau, never as a number in a median.
 
-    python section_6_figures/fig_newton_cost.py --outdir section_6_figures/out
+    python render/fig_newton_cost.py --outdir render/out
 """
 
 import os
@@ -47,7 +47,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 KEYS = ["Re", "amp", "branch"]
 

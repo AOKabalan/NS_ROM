@@ -16,7 +16,7 @@ in one run and absent from the other. G6 says E11 is missing sym@amp-0.80 while
 E12 has it: the local model failing where the global one succeeds is the wrong
 direction for the argument, so it is reported loudly rather than plotted quietly.
 
-    python section_6_figures/fig_local_vs_global.py
+    python render/fig_local_vs_global.py
 """
 
 import os
@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 
 def prep(tag, root, audit):

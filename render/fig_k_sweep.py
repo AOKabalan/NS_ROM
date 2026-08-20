@@ -22,7 +22,7 @@ marker here is therefore computed over the amplitude columns that ALL loaded
 runs share, and the count is printed and written into a macro. Pass
 --all-amps to defeat this only if you intend to caption the difference.
 
-    python section_6_figures/fig_k_sweep.py --width 0.7linewidth
+    python render/fig_k_sweep.py --width 0.7linewidth
 """
 
 import os
@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _common as C  # noqa: E402
+import common as C  # noqa: E402
 
 DEFAULT_RUNS = [(1, "E2_K1_tensor"), (2, "E5_K2_tensor"),
                 (4, "E1_K4_tensor"), (6, "E6_K6_tensor")]
