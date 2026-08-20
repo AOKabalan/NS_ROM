@@ -115,9 +115,11 @@ def main():
 
     n_no = int((crit.get("n_crossings", 0) == 0).sum()) if "n_crossings" in crit else 0
     if n_no:
-        print(f"  [warn] {n_no} amplitude column(s) have no mu sign change -- "
-              f"they will be absent from Re_c(a); check whether the leg simply "
-              f"terminated above Re_c")
+        print(f"  [note] {n_no} amplitude column(s) have no mu sign change and "
+              f"are absent from Re_c(a). At large +a the pitchfork moves up in "
+              f"Re (the trend extrapolates past the swept Re_max), so the "
+              f"symmetric leg never destabilises inside the box -- these legs "
+              f"terminate below Re_c rather than failing to detect it.")
 
     macros = {}
     if args.which in ("curve", "both"):

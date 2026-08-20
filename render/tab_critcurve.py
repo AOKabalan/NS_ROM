@@ -140,14 +140,22 @@ def main():
             r"first $\Rey$ at which an asymmetric leg's $|\CL^{\mathrm{FOM}}|$ "
             r"clears a fixed fraction of its own scale. ")
     if len(flagged):
-        note += (r"Rows marked $\dagger$ are amplitudes at which the lift "
-                 r"proxy does not locate the pitchfork -- away from "
-                 r"$\arot = 0$ the rotating cylinders generate lift on the "
-                 r"symmetric branch, so departure from zero is not by itself a "
+        note += (r"Rows marked $\dagger$ are amplitudes at which the proxy does "
+                 r"not locate the pitchfork because the asymmetric leg was not "
+                 r"continued down to it: its stored full-order points begin well "
+                 r"above $\Rec$, so the first $\Rey$ at which lift departs zero "
+                 r"is pinned to the start of a truncated leg rather than to the "
                  r"bifurcation. They are shown for completeness and excluded "
                  r"from the quoted agreement. ")
-    note += (r"A full-order eigensweep (and a bisection driver) would replace "
-             r"this column outright; see \cref{sec:conclusions}.")
+    note += (r"$\Rec(\mu)$ is taken as the \emph{first} real zero crossing. The "
+             r"reduced indicator is cluster-local and discontinuous where the "
+             r"cluster assignment changes along a leg, which introduces spurious "
+             r"later crossings; on this $K=4$ configuration every such crossing "
+             r"falls above the genuine pitchfork, so the first-crossing rule is "
+             r"unaffected. That ordering is a property of the cluster partition, "
+             r"not a guarantee: it is validated here, not robust in general. A "
+             r"full-order eigensweep (and a bisection driver) would replace this "
+             r"column outright; see \cref{sec:conclusions}.")
 
     body = C.latex_table(
         rows,
