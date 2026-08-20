@@ -18,7 +18,7 @@ reconstruct exactly from source alone.
 ## Bundles
 
 The `figures` bundle is the smallest reviewed set that supports the active
-scripts in both `section_6_figures/` and `paper_figures/` from existing results,
+renderers in `render/` from existing results,
 without launching FOM/ROM solves. It includes scalar state indices, the selected
 stored point fields used by the paper pressure-error figure, reviewed error
 tables, POD/tensor products read directly by renderers, and production

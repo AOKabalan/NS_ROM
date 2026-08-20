@@ -27,17 +27,20 @@ NS_ROM/
 │   ├── io/                   # state store and mass-matrix persistence
 │   ├── plotting/             # plotting and speedup reporting
 │   └── workflows/            # local pipeline and hyper-reduction studies
-├── scripts/                  # wrappers plus standalone CLI/diagnostic tools
+├── render/                   # every paper figure and table, plus their style
+├── scripts/                  # CLI and diagnostic entry points
 ├── mesh/                     # pinball meshes
 ├── states/                   # solution checkpoints
+├── run.sh                    # the experiment matrix
+├── Makefile                  # the dependency graph
 └── pyproject.toml
 ```
 
 `scripts/main_local.py` is the supported shell-facing local-ROM entry point; it
-delegates to `nsrom.workflows.local_pipeline`. Not every script is a wrapper:
-standalone tools such as `scripts/fom_bifurcation_diagram_fom.py`,
-`scripts/cluster_diagnostics.py`, and the point-error and plotting diagnostics
-remain intentionally outside the package workflows.
+delegates to `nsrom.workflows.local_pipeline`. Standalone tools such as
+`scripts/fom_bifurcation_diagram_fom.py`, `scripts/cluster_diagnostics.py`, and
+the point-error and plotting diagnostics sit intentionally outside the package
+workflows.
 
 ## Installation
 
@@ -75,34 +78,44 @@ comparisons. Its module-level configuration lives in
 `nsrom/workflows/local_pipeline.py`; standalone commands retain their own
 module-level configuration under `scripts/`.
 
-## Reproducibility commands
+## Reproducing the results
 
-Run Firedrake-backed tests through one MPI rank:
+Every experiment the manuscript depends on is in `run.sh`, one entry per run,
+each tagged with the figures and tables it feeds:
+
+```bash
+./run.sh --list          # the matrix, and what each run is for
+./run.sh E1_K4_tensor    # one run (hours)
+./run.sh all             # everything not already present
+```
+
+`make` knows which run feeds which artifact, so only the affected things
+rebuild:
+
+```bash
+make paper     # every figure, table and macro file the manuscript uses
+make figures   # the figures only
+make tables    # the tables only
+make list      # what is built, and which runs are present
+make sync      # copy render/out into the paper repo
+```
+
+Experiments are deliberately not `make` targets: a renderer takes seconds and
+may rebuild on a timestamp, a sweep takes hours and must not. `make paper` will
+never start one — use `make run-<TAG>` or `./run.sh`.
+
+From a fresh checkout with no `states/`, `make tables` still rebuilds
+`tab_critcurve.tex` and `macros_critcurve.tex` from the tracked
+`render/out/critical_curve.csv`. Everything else needs the run artefacts, which
+live outside Git; a renderer rule is defined only when its runs are present, so
+make leaves committed output alone rather than regenerating it from nothing.
+
+Tests run through one MPI rank, as does anything importing Firedrake:
 
 ```bash
 make test-fast
 make test
 ```
-
-Regenerate the proven repository-contained renderer subset:
-
-```bash
-make figures
-make figures-section6
-make figures-paper
-```
-
-`make figures` is intentionally partial. The Section 6 target reads the tracked
-`section_6_figures/out/critical_curve.csv` and rewrites the derived
-`tab_critcurve.tex` and `macros_critcurve.tex` in that directory. The paper
-target reads `mesh/mid_pinball.msh` and writes `figures/pinball_geometry.pdf`
-and `figures/pinball_geometry.png`.
-
-Other Section 6 and paper figures require local `states/`, `local_rom/`,
-`paper_data/`, `mass/`, POD, or sweep artefacts that are not available from a
-fresh checkout. Heavy FOM/ROM solves, basis construction, data generation, and
-full parameter sweeps are excluded from these rendering targets. Commands that
-import Firedrake, including both test targets, must run through one MPI rank.
 
 ## External data
 

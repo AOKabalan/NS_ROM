@@ -47,19 +47,51 @@ Built on **Firedrake** (which provides PETSc and SLEPc).
   - `nsrom/clustering/` — clustering and whitening utilities.
   - `nsrom/snapshots/` — snapshot generation, collection, and storage helpers.
   - `nsrom/io/` — state-store and mass-matrix persistence.
-  - `nsrom/plotting/` — plotting and speedup-reporting utilities.
+  - `nsrom/plotting/` — plot helpers and speedup reporting. Figure *style*
+    is not here; it moved to `render/style.py` with the renderers.
   - `nsrom/workflows/` — the local pipeline and hyper-reduction workflows.
   - top level: Navier–Stokes problem setup, lifting functions, tensor
     convection, and config/layout/cache helpers.
-- **`scripts/`** — thin runnable/compatibility wrappers plus remaining explicit
-  command-line and diagnostic entry points. `scripts/main_local.py` remains the
-  supported shell-facing local-ROM command and delegates to
-  `nsrom.workflows.local_pipeline`. Substantial standalone tools include
-  `solve_FOM.py`, `fom_bifurcation_diagram_fom.py`, cluster/spine diagnostics,
-  point-error analysis, and snapshot plotting.
-- **`section_6_figures/`** and **`paper_figures/`** — generate manuscript
-  figures and LaTeX macro/table files. `section_6_figures/out/` holds the
-  generated PDFs, CSVs, and `.tex` output.
+- **`scripts/`** — command-line and diagnostic entry points. `scripts/main_local.py`
+  is the supported shell-facing local-ROM command and delegates to
+  `nsrom.workflows.local_pipeline`. Standalone tools: `solve_FOM.py`,
+  `fom_bifurcation_diagram_fom.py`, `audit_section6.py`, cluster/spine
+  diagnostics, point-error analysis, and snapshot plotting. The compatibility
+  shims that used to live here are gone — import from `nsrom.*` directly.
+- **`render/`** — every manuscript figure and table is produced here, and
+  nowhere else. `style.py` holds the style knobs, `common.py` the shared data
+  access and LaTeX emission, one `fig_*.py` / `tab_*.py` per artifact, and
+  `out/` the generated PDFs, CSVs and `.tex`.
+- **`run.sh`** — the experiment matrix: every run the manuscript depends on,
+  each tagged with the figures and tables it feeds. `./run.sh --list`.
+- **`Makefile`** — the dependency graph tying the two together.
+
+## Regenerating results
+
+The Makefile knows which run feeds which artifact, so only the affected things
+rebuild. `make help` prints this; the short version:
+
+| changed | command |
+|---|---|
+| a colour, a cutoff, which amplitudes a table shows | `make render/out/tab_k_sensitivity.tex` |
+| a style knob in `render/style.py` | `make figures` |
+| a numerical parameter for one run | `./run.sh <TAG>` then `make paper` |
+| the training snapshots | `make clean-derived && make runs && make paper` |
+
+Two rules the graph enforces, both deliberate:
+
+- **Experiments are never make targets.** A renderer takes seconds and may
+  rebuild on a timestamp; a sweep takes hours and must not. `states/` appears
+  only as a prerequisite. `make paper` will never start a sweep.
+- **A renderer rule exists only when its runs do.** `render/out/` holds
+  committed `.csv` and `.tex` — the asset that lets the tables rebuild without
+  a sweep — and those are also renderer outputs. On a checkout without
+  `states/`, make leaves them alone rather than regenerating from nothing.
+  `make list` shows which runs are present.
+
+Adding a figure or table: write `render/fig_x.py`, add its rule to the
+Makefile, add it to `FIGS` or `TABS`, and add whatever run it needs to
+`run.sh`. Nothing else needs to know about it.
 
 ## Environment
 
@@ -101,7 +133,7 @@ as strictly read-only:
 - `snapshots/`, `snapshots_sparse/`
 - `logs/`
 - `paper_data/`
-- `section_6_figures/out/`
+- `render/out/`
 - **all `*.h5`, `*.npz`, and `*.csv` files at the repository root**
 
 (These are gitignored, so git will not protect you — a wrong `rm` or overwrite
@@ -114,9 +146,9 @@ is permanent.)
    and ask.
 2. **Never run a full parameter sweep, diagram build, or anything expected to
    take more than ~2 minutes without asking Ali first.** The sweep/diagram
-   drivers (`sweep.py`, `build_diagram_bare*.py`, `main_local.py` with
-   `RUN_SWEEP=True`, `run_all.sh`, `run_gaps.sh`, `run_replay.sh`) fall in this
-   category. Short smoke tests are fine.
+   drivers (`main_local.py` with `RUN_SWEEP=True`, `./run.sh`, `make runs`,
+   `make run-<TAG>`) fall in this category. Short smoke tests are fine —
+   `make tables` on a checkout without `states/` is one.
 3. **Make small, focused commits — one logical change per commit.**
 4. **Do not change numerical defaults as a side effect of refactoring** —
    tolerances (`pod_energy_tol`, `deim_energy_tol_*`), mode counts

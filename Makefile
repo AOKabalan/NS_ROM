@@ -239,6 +239,17 @@ runs: ; ./run.sh all
 $(RUN_TAGS:%=run-%): run-%: ; ./run.sh $*
 .PHONY: $(RUN_TAGS:%=run-%)
 
+# When a guard above suppressed a rule, the artifact has no way to be built.
+# An explicit rule always beats a pattern rule, so this only ever fires for the
+# suppressed ones -- and says which run is missing instead of leaving make to
+# report "No rule to make target".
+$(OUT)/%.pdf $(OUT)/%.tex:
+	@printf '%s\n' \
+	  "cannot build $@ -- the runs it reads are not in this checkout." \
+	  "  make list          which runs are present" \
+	  "  ./run.sh --list    what each one costs and feeds" ; \
+	 exit 1
+
 # -----------------------------------------------------------------------------
 sync: ; $(PYTHON) render/sync_paper.py $(PAPER)
 

@@ -86,11 +86,12 @@ test_A_macros.tex
 tests/*.log
 .pytest_cache/
 
-# section_6_figures/out/ holds the derived CSV + .tex macros that regenerate
-# every paper figure WITHOUT rerunning a sweep — the key reproducibility asset.
-# Keep those; ignore only the heavy generated PDFs. The directory itself must
-# stay un-ignored, since a negation cannot re-include a file inside an ignored
+# render/out/ holds the derived CSV + .tex macros that regenerate every paper
+# table WITHOUT rerunning a sweep — the key reproducibility asset. Keep those;
+# ignore only the heavy generated PDFs. The directory itself must stay
+# un-ignored, since a negation cannot re-include a file inside an ignored
 # directory. These lines come after the global *.csv rule so they win.
-!section_6_figures/out/*.csv
-!section_6_figures/out/*.tex
-section_6_figures/out/*.pdf
+!render/out/*.csv
+!render/out/*.tex
+render/out/*.pdf
+render/out/*.png
