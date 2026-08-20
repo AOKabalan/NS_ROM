@@ -9,6 +9,7 @@
 #
 #   make run-E5_K2_tensor    one experiment (hours; see ./run.sh --list)
 #   make runs                all 18, skipping any already present
+#   make point-errors        re-derive paper_data/point_errors_E1.csv (minutes)
 #
 #   make test-fast       test suite minus the slow marker
 #   make test            the whole suite
@@ -44,6 +45,17 @@ PYTEST      ?= pytest
 MPLBACKEND  ?= Agg
 PAPER       ?= $(HOME)/01_research/my_paper/Ali_Paper/paper
 
+# The mass matrices carry the inner-product tag: nsrom.io.mass writes
+# M_u_<ip>.npz / M_p_<ip>.npz, and mass/mass_meta.json records the paths.
+# These must be the matrices main_local.py used -- rebuilding them would change
+# the norm every error in the paper is quoted in.
+INNER_PRODUCT ?= H1
+MASS_U        ?= mass/M_u_$(INNER_PRODUCT).npz
+MASS_P        ?= mass/M_p_$(INNER_PRODUCT).npz
+
+# layout.py: local_rom/K<K>_<ip>_tol<pod_tol:%g>. E1 is K=4, H1, tol 1e-8.
+LOCAL_ROM_E1  ?= local_rom/K4_$(INNER_PRODUCT)_tol1e-08
+
 OUT    := render/out
 RENDER := $(MPLBACKEND:%=MPLBACKEND=%) $(PYTHON)
 
@@ -70,7 +82,7 @@ idx = $(wildcard states/$(1)/index.jsonl)
 have = $(if $(strip $(foreach t,$(1),$(if $(wildcard states/$(t)/index.jsonl),,x))),,yes)
 
 .PHONY: paper figures tables extras sync runs list test test-fast \
-        clean-derived help
+        clean-derived point-errors help
 .DEFAULT_GOAL := help
 
 # -----------------------------------------------------------------------------
@@ -107,7 +119,7 @@ tables:  $(TABS) $(OUT)/section6_numbers.tex
 ifeq ($(call have,E1_K4_tensor),yes)
 $(OUT)/fig_branch_errors.pdf $(OUT)/macros_branch_errors.tex &: \
 		render/fig_branch_errors.py $(COMMON) \
-		$(call idx,E1_K4_tensor) paper_data/point_errors_E1.csv
+		$(call idx,E1_K4_tensor) $(wildcard paper_data/point_errors_E1.csv)
 	$(RENDER) render/fig_branch_errors.py
 endif
 
@@ -147,8 +159,11 @@ endif
 
 # --- fig:hyperreduction  §4 -- the actual reduced integration cells.
 #     Needs Firedrake to rebuild the submesh, hence the launcher.
+#     DEIM_OPS overrides where the index arrays are read from; unset, the
+#     script tries the local_rom layout then the legacy global/ location.
 $(OUT)/hyperreduction_pinball.pdf: render/hyperreduction.py render/style.py mesh/mid_pinball.msh
-	MPLBACKEND=$(MPLBACKEND) $(MPIEXEC) -n 1 $(PYTHON) render/hyperreduction.py
+	MPLBACKEND=$(MPLBACKEND) $(DEIM_OPS:%=NSROM_DEIM_OPS=%) \
+	    $(MPIEXEC) -n 1 $(PYTHON) render/hyperreduction.py
 
 # --- tab:params, tab:dim_comparison, tab:k_sensitivity, tab:hyperreduction
 #     and section6_numbers.tex all come from one pass over the runs and caches.
@@ -220,15 +235,22 @@ endif
 # derived data (between the runs and the renderers)
 # -----------------------------------------------------------------------------
 
-# per-point field errors. Reads stored fields, so it needs the mass matrices
-# main_local.py used -- rebuilding them would change the norm the paper quotes.
-paper_data/point_errors_E1.csv: $(wildcard scripts/compute_point_errors.py) \
-		$(call idx,E1_K4_tensor) $(wildcard mass/M_u.npz)
+# Per-point field errors, for the pressure panel of fig:branch_errors.
+#
+# NOT an automatic target, for the same reason the experiments are not: it reads
+# the stored field of every point in E1 and takes minutes, and paper_data/ is on
+# the IRREPLACEABLE list in CLAUDE.md. As a target it re-derived an existing,
+# perfectly good CSV simply because a fresh checkout gave the script a new
+# mtime. It is a prerequisite only -- if it is absent, fig_branch_errors.py
+# still draws the velocity panel and labels the pressure one unavailable.
+#
+# Regenerate deliberately:  make point-errors
+point-errors:
 	$(MPIEXEC) -n 1 $(PYTHON) scripts/compute_point_errors.py \
 	    --state-dir states/E1_K4_tensor \
-	    --local-rom local_rom/K4_H1_tol1e-08 \
-	    --mass-u mass/M_u.npz --mass-p mass/M_p.npz \
-	    --out $@
+	    --local-rom $(LOCAL_ROM_E1) \
+	    --mass-u $(MASS_U) --mass-p $(MASS_P) \
+	    --out paper_data/point_errors_E1.csv
 
 # -----------------------------------------------------------------------------
 # experiments -- explicit only. See the note at the top.

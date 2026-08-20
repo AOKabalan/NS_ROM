@@ -43,13 +43,35 @@ ACCENT, ACCENT2, GREY, DARK = "#c0392b", "#2471a3", "#c2c2c2", "#2b2b2b"
 # ====================== CONFIG ======================
 USE_FIREDRAKE     = True                      # (A) exact path if True, else (B)
 MESH_FILE         = "mesh/mid_pinball.msh"
-DEIM_OPS_NPZ      = "global/deim_ops.npz"      # holds indices_F / indices_J_rows / _cols
+# DEIM indices (indices_F / indices_J_rows / indices_J_cols). nsrom writes these
+# per cluster under the local_rom layout; "global/deim_ops.npz" is where a
+# pre-refactor global run left them. Resolved at use: an explicit
+# NSROM_DEIM_OPS wins, otherwise the first candidate that exists.
+DEIM_OPS_CANDIDATES = [
+    "local_rom/K1_H1_tol1e-08/cluster_0/deim_ops.npz",
+    "global/deim_ops.npz",
+]
 REDUCED_CELLS_NPY = "reduced_cells.npy"        # used only if USE_FIREDRAKE = False
 REYNOLDS_INIT     = 100.0
 AMPLITUDE_INIT    = 0.0
 OUT_STEM          = "hyperreduction_pinball"
 OUTDIR            = "render/out"
 # ====================================================
+
+
+def resolve_deim_ops():
+    """Where the DEIM index arrays live, or a message naming everywhere looked."""
+    override = os.environ.get("NSROM_DEIM_OPS")
+    for cand in ([override] if override else []) + DEIM_OPS_CANDIDATES:
+        if os.path.isfile(cand):
+            print(f"  [deim] reading indices from {cand}")
+            return cand
+    raise FileNotFoundError(
+        "no DEIM operator file found. Looked in:\n  "
+        + "\n  ".join(DEIM_OPS_CANDIDATES)
+        + "\nPoint NSROM_DEIM_OPS at the right one, e.g.\n"
+          "  make render/out/hyperreduction_pinball.pdf "
+          "DEIM_OPS=local_rom/K4_H1_tol1e-08/cluster_0/deim_ops.npz")
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +92,7 @@ def get_cells_and_mesh_firedrake():
     cell_node = V.cell_node_map().values        # (n_cells, nodes_per_cell)
 
     # --- load DEIM indices (print keys so you can rename if they differ) ---
-    d = np.load(DEIM_OPS_NPZ, allow_pickle=True)
+    d = np.load(resolve_deim_ops(), allow_pickle=True)
     print("deim_ops.npz keys:", list(d.keys()))
     indices_F      = np.asarray(d["indices_F"]).ravel()
     indices_J_rows = np.asarray(d["indices_J_rows"]).ravel()
