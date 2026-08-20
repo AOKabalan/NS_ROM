@@ -10,8 +10,8 @@ measured values instead of remembered ones.
 
 Usage (from the repo root):
 
-    python audit_section6.py
-    python audit_section6.py --repo-root . --out paper_data/audit.json
+    python scripts/audit_section6.py
+    python scripts/audit_section6.py --repo-root . --out paper_data/audit.json
     python audit_section6.py --states E1_K4_tensor E2_K1_tensor   # subset
 
 Writes:

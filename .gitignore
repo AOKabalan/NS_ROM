@@ -72,6 +72,11 @@ states/
 states_snapshot_prepru/
 states_retired/
 
+# Generated at the repo root by nsrom/workflows/hyperreduction_study.py.
+# Outputs, not inputs: nothing reads them back.
+deim_realized_modes.json
+test_A_macros.tex
+
 # Backups and archives (kept on disk, never committed)
 *.tgz
 *.bak_*

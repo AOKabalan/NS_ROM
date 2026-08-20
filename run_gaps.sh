@@ -233,7 +233,7 @@ if [[ $DRY_RUN -eq 0 ]]; then
 cat <<'NOTES'
 
 --- verify, then regenerate ---
-  python audit_section6.py --repo-root .
+  python scripts/audit_section6.py --repo-root .
 
   Check in the new report:
     * E7_K4_tensor_tol1e-4 back near ~4100-4300 points, NOT ~8400,
