@@ -45,13 +45,23 @@ COST_LABEL = {"E1_K4_tensor": "Local",
               "E12_K1_matchdim": "GlobalMatchDim"}
 
 
-def load(tag, root, audit):
+# Which asymmetric legs are spurious duplicates is a property of the parameter
+# box (the bifurcation lies above Re_max), not of the ROM variant, so the set is
+# classified ONCE on the master run and reused for every run -- see the
+# legs_from_run docstring in common.py. Recomputing it per run instead reads the
+# duplicate set off that run's own C_L, which differs between variants (a DEIM
+# replay has NaN C_L over most of the domain) and drops a different, unmatched
+# set of legs from each arm -- the exact failure that broke tab:hyperreduction's
+# matched-denominator premise.
+MASTER_TAG = "E1_K4_tensor"
+
+
+def load(tag, root, drop_keys):
     sd = C.state_dir(tag, root)
     if not os.path.isdir(sd):
         return None
     df = C.load_run(tag, root)
-    return C.drop_duplicate_legs(
-        df, C.duplicate_leg_keys(df, audit_json=audit, tag=tag, verbose=False))
+    return C.drop_duplicate_legs(df, drop_keys)
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +182,7 @@ def tab_hyperreduction(args, macros):
     for (ta, la), (tb, lb), seed in PAIRS:
         frames = {}
         for tag, lab in ((ta, la), (tb, lb)):
-            d = load(tag, args.states_root, args.audit)
+            d = load(tag, args.states_root, args.drop_keys)
             if d is None:
                 print(f"  [warn] {tag} missing")
                 continue
@@ -234,10 +244,16 @@ def tab_hyperreduction(args, macros):
                r"sweep, where a diverged leg terminates and the DEIM arm never "
                r"reaches most of the domain. Seeds are stored full-order "
                r"states, so neither method inherits a warm start from the "
-               r"other. The $\mu=$ NaN count tracks the divergence count almost "
-               r"exactly, which is the substantive point: DEIM does not degrade "
-               r"the stability indicator near the bifurcation, it fails to "
-               r"reach a state at which one could be computed."
+               r"other. Median iterations and solve time are over each arm's "
+               r"\emph{converged} points only -- a diverged solve has no time to "
+               r"quote -- so the DEIM medians are taken over its converged "
+               r"subset, not the full set. The $\mu=$ NaN count is the diverged "
+               r"points plus a smaller number of converged points whose reduced "
+               r"eigenproblem has no real leading eigenvalue (a complex pair on "
+               r"the asymmetric branch); it therefore exceeds the divergence "
+               r"count rather than matching it. DEIM's near-bifurcation NaNs are "
+               r"overwhelmingly divergences: it fails to reach a state at which "
+               r"the indicator could be computed."
                if len(want) == 1 else
                r"Both arms of each pair are replayed over the same stored point "
               r"set, so the denominator is fixed and every rate is directly "
@@ -246,10 +262,12 @@ def tab_hyperreduction(args, macros):
               r"reaches most of the domain. The first pair is seeded from "
               r"stored reduced states and the second from stored full-order "
               r"states, which removes the warm start as a variable and isolates "
-              r"the hyper-reduction. The $\mu=$ NaN count tracks the divergence "
-              r"count almost exactly, which is the substantive point: DEIM does "
-              r"not degrade the stability indicator near the bifurcation, it "
-              r"fails to reach a state at which one could be computed."))
+              r"the hyper-reduction. Median iterations and solve time are over "
+              r"each arm's \emph{converged} points only. The $\mu=$ NaN count is "
+              r"the diverged points plus a smaller number of converged points "
+              r"whose reduced eigenproblem has no real leading eigenvalue (a "
+              r"complex pair on the asymmetric branch), so it exceeds the "
+              r"divergence count; for DEIM the divergences dominate."))
 
 
 def tab_k_sensitivity(args, dims, macros):
@@ -270,7 +288,7 @@ def tab_k_sensitivity(args, dims, macros):
 
     frames, amps = {}, None
     for K, tag in RUNS:
-        d = load(tag, args.states_root, args.audit)
+        d = load(tag, args.states_root, args.drop_keys)
         if d is None:
             print(f"  [warn] {tag} missing -- K={K} omitted")
             continue
@@ -331,7 +349,7 @@ def tab_cost(args, macros):
     rows = []
 
     def speed(tag):
-        d = load(tag, args.states_root, args.audit)
+        d = load(tag, args.states_root, args.drop_keys)
         if d is None:
             return None
         d = d[d.converged.astype(bool)]
@@ -407,6 +425,14 @@ def main():
         args.macros = os.path.join(args.outdir, "section6_numbers.tex")
 
     os.makedirs(args.outdir, exist_ok=True)
+
+    # Classify the duplicate legs ONCE on the master run and reuse for every
+    # table, rather than recomputing per run off each run's own C_L (see load()).
+    master_df = C.load_run(MASTER_TAG, args.states_root)
+    args.drop_keys = C.duplicate_leg_keys(
+        master_df, audit_json=args.audit, tag=MASTER_TAG, verbose=False)
+    print(f"  duplicate legs (from {MASTER_TAG}): {len(args.drop_keys)}")
+
     dims = C.cache_dims(args.cache_root)
     print(f"  cache dimensions found for {len(dims)} (K, tol) combinations")
     for (K, tol), r in sorted(dims.items(), key=lambda kv: (kv[0][0], -(kv[0][1] or 0))):
