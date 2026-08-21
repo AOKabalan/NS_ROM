@@ -267,7 +267,7 @@ point-errors:
 # -----------------------------------------------------------------------------
 # experiments -- explicit only. See the note at the top.
 # -----------------------------------------------------------------------------
-RUN_TAGS := $(shell ./run.sh --list 2>/dev/null | awk 'NR>2 && NF {print $$1}')
+RUN_TAGS := $(shell ./run.sh --list 2>/dev/null | awk 'NR>2 {if (!NF) exit; print $$1}')
 
 runs: ; ./run.sh all
 $(RUN_TAGS:%=run-%): run-%: ; ./run.sh $*
