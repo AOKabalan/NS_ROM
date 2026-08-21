@@ -1,156 +1,154 @@
 # CLAUDE.md
 
-Guidance for working in this repository.
+Persistent guidance for a Claude Code session working in this repository. This
+file is for the coding agent — user-facing setup and workflow live in the docs
+linked at the bottom. Keep it short.
 
 ## What this project is
 
-`nsrom` is a **reduced-order modeling (ROM) framework for the fluidic pinball** —
+`nsrom` is a reduced-order modeling (ROM) framework for the **fluidic pinball**:
 steady, incompressible Navier–Stokes flow past three rotating cylinders,
 parametrized by Reynolds number `Re` and cylinder rotation amplitude `A`. The
-scientific goal is to study the **bifurcation of steady solutions** in the
-`(Re, A)` parameter space: the flow exhibits a Hopf bifurcation near `Re ≈ 18`
-and a steady **pitchfork** near `Re ≈ 68.22`, and the code tracks branches and
-locates the critical curve across the two-parameter plane.
+scientific goal is the bifurcation structure of steady solutions in `(Re, A)` —
+branch tracking and localization of the critical curve. The steady pitchfork
+sits near `Re ≈ 68.22`.
 
-The method is **POD–Galerkin projection with DEIM/MDEIM hyper-reduction**:
+The methodology: snapshots over `(Re, A)` across solution branches; POD with
+supremizer enrichment for inf–sup stability; separate pressure and
+velocity/supremizer reduced spaces; local ROMs from energy-norm clustering;
+Galerkin reduced Newton solves with cluster-aware warm starts; and reduced
+bifurcation detection.
 
-- Snapshots collected over a sampling of `(Re, A)` across all branches.
-- POD with **supremizer enrichment** for inf–sup stability; pressure basis
-  separate from the velocity+supremizer basis.
-- **Local ROMs** via energy-norm k-means++ clustering (optional Cholesky or POD
-  whitening); each cluster carries its own POD basis and DEIM operators.
-- **Newton solves on the reduced residual** with cluster-aware change-of-basis
-  warm starts and snake-ordered continuation over the sweep grid.
-- **Bifurcation detection** via a reduced generalized eigenproblem
-  `J_red ν = μ M̃_red ν`, tracking the sign of the leftmost real eigenvalue;
-  branch switching by eigenvector-kick warm starts, cross-validated against a
-  full-order SLEPc Krylov–Schur pipeline.
+The nonlinear convection term is evaluated per the `mode` field in
+`LocalROMConfig`:
 
-The convection term can be evaluated three ways, selected by a single `mode`
-field on `LocalROMConfig` (`nsrom/config.py`) and threaded through every solver
-call — `VALID_MODES = ('exact', 'deim', 'tensor')`:
-- `exact` — re-assemble the nonlinear term on the full mesh (reference).
-- `deim` — DEIM/MDEIM hyper-reduction with submesh assembly (affine online cost).
-- `tensor` — precomputed quadratic convection tensor (requires
-  `compute_affine_convection=True`).
+- `exact`  — reassemble the nonlinear term on the full-order mesh;
+- `deim`   — DEIM/MDEIM hyper-reduction;
+- `tensor` — precomputed quadratic convection tensor.
 
-Built on **Firedrake** (which provides PETSc and SLEPc).
+`tensor` is the canonical manuscript mode; `deim` is one option, not the
+defining strategy. Confirm the mode from the current experiment configuration
+before making claims about paper methodology.
 
-## Layout
+Built on Firedrake, PETSc, SLEPc, MPI, NumPy/SciPy.
 
-- **`nsrom/`** — the installed package (see `pyproject.toml`, `pip install -e .`).
-  - `nsrom/rom/` — POD, DEIM/MDEIM hyper-reduction, reduced operators, Galerkin
-    Newton solver, and local-ROM implementation (`rom_solver.py` owns the
-    authoritative `VALID_MODES`).
-  - `nsrom/bifurcation/` — detection, branch jumping, sweep, diagram
-    construction, and replay.
-  - `nsrom/clustering/` — clustering and whitening utilities.
-  - `nsrom/snapshots/` — snapshot generation, collection, and storage helpers.
-  - `nsrom/io/` — state-store and mass-matrix persistence.
-  - `nsrom/plotting/` — plot helpers and speedup reporting. Figure *style*
-    is not here; it moved to `render/style.py` with the renderers.
-  - `nsrom/workflows/` — the local pipeline and hyper-reduction workflows.
-  - top level: Navier–Stokes problem setup, lifting functions, tensor
-    convection, and config/layout/cache helpers.
-- **`scripts/`** — command-line and diagnostic entry points. `scripts/main_local.py`
-  is the supported shell-facing local-ROM command and delegates to
-  `nsrom.workflows.local_pipeline`. Standalone tools: `solve_FOM.py`,
-  `fom_bifurcation_diagram_fom.py`, `audit_section6.py`, cluster/spine
-  diagnostics, point-error analysis, and snapshot plotting. The compatibility
-  shims that used to live here are gone — import from `nsrom.*` directly.
-- **`render/`** — every manuscript figure and table is produced here, and
-  nowhere else. `style.py` holds the style knobs, `common.py` the shared data
-  access and LaTeX emission, one `fig_*.py` / `tab_*.py` per artifact, and
-  `out/` the generated PDFs, CSVs and `.tex`.
-- **`run.sh`** — the experiment matrix: every run the manuscript depends on,
-  each tagged with the figures and tables it feeds. `./run.sh --list`.
-- **`Makefile`** — the dependency graph tying the two together.
+## Scientific priority
 
-## Regenerating results
+This is research software: scientific correctness and reproducibility outrank
+cosmetic cleanup. Refactoring must preserve numerical behavior unless the task
+explicitly asks for a scientific change.
 
-The Makefile knows which run feeds which artifact, so only the affected things
-rebuild. `make help` prints this; the short version:
+**Never silently change** equations/weak forms, boundary conditions, POD
+definitions, inner products (velocity `H1`, pressure `L2`), lifting/
+homogenization, clustering metrics, basis dimensions, tolerances, solver
+settings, continuation logic, bifurcation criteria, tensor index conventions,
+or numerical defaults.
 
-| changed | command |
-|---|---|
-| a colour, a cutoff, which amplitudes a table shows | `make render/out/tab_k_sensitivity.tex` |
-| a style knob in `render/style.py` | `make figures` |
-| a numerical parameter for one run | `./run.sh <TAG>` then `make paper` |
-| the training snapshots | `make clean-derived && make runs && make paper` |
+- If a numerical default looks wrong, **report it — do not change it.**
+- If a structural change moves numerical outputs, **stop and investigate why.**
 
-Two rules the graph enforces, both deliberate:
+The full safety policy is `.claude/rules/scientific-safety.md`.
 
-- **Experiments are never make targets.** A renderer takes seconds and may
-  rebuild on a timestamp; a sweep takes hours and must not. `states/` appears
-  only as a prerequisite. `make paper` will never start a sweep.
-- **A renderer rule exists only when its runs do.** `render/out/` holds
-  committed `.csv` and `.tex` — the asset that lets the tables rebuild without
-  a sweep — and those are also renderer outputs. On a checkout without
-  `states/`, make leaves them alone rather than regenerating from nothing.
-  `make list` shows which runs are present.
+## Architecture
 
-Adding a figure or table: write `render/fig_x.py`, add its rule to the
-Makefile, add it to `FIGS` or `TABS`, and add whatever run it needs to
-`run.sh`. Nothing else needs to know about it.
+```text
+nsrom/     installable package — all reusable numerical code
+scripts/   shell-facing entry points and diagnostics
+render/    manuscript figure/table generation (style.py, common.py, fig_*, tab_*, out/)
+run.sh     the explicit experiment matrix (expensive runs)
+Makefile   cheap dependency graph for regenerating manuscript artifacts
+```
 
-## Environment
+- **Reusable numerical functionality belongs in `nsrom/`**, not duplicated in
+  scripts. Subpackages: `rom/` (POD/DEIM, operators, solvers, local ROM),
+  `bifurcation/` (detection, sweep, diagram, replay), `clustering/`,
+  `snapshots/`, `io/`, `plotting/`, `workflows/`. Legacy top-level modules
+  (`local_rom`, `cluster_building`, `snapshot_collection`, `scripts.sweep`,
+  `scripts.generate_snapshots`) were migrated into these subpackages — do not
+  reintroduce the old import paths.
+- **`scripts/`** should parse args, call package functionality, save/report —
+  no reusable algorithms, no `sys.path` hacks where a normal import works.
+- **`render/`** owns manuscript artifacts. The LaTeX manuscript is authoritative
+  about which figures/tables are actually used; distinguish manuscript artifacts
+  from exploratory/diagnostic plots.
+- **`run.sh`** defines the expensive experiments, one tagged entry each
+  (`./run.sh --list`).
+- **`Makefile`** rebuilds cheap artifacts on a timestamp. **Expensive
+  experiments are never automatic Make targets** — `make paper` renders from
+  existing `states/` and must never launch a sweep. A renderer takes seconds; a
+  sweep takes hours.
 
-- Firedrake lives in a venv at **`~/venv-firedrake`**. **Activate it before
-  running anything that imports Firedrake:**
-  ```bash
-  source ~/venv-firedrake/bin/activate
-  ```
-- **⚠️ Interpreter version is currently ambiguous.** `~/venv-firedrake/pyvenv.cfg`
-  declares Python **3.14.4**, but `__pycache__` directories contain **both**
-  `cpython-312` and `cpython-314` bytecode. This means the tree has been run
-  under two different interpreters. Confirm which interpreter is actually in use
-  (`python --version` after activating) before trusting any environment-sensitive
-  behavior, and flag this to Ali rather than assuming.
+## Expensive and irreplaceable data
 
-- **⚠️ `import firedrake` HANGS in singleton mode — launch everything under
-  `mpiexec -n 1`.** On this stack (OpenMPI **5.0.10**, Python 3.14.4) a plain
-  `python -c "import firedrake"` hangs forever inside `MPI_Init`
-  (`petsc4py.init` → PETSc init → `MPI_Init`; `from mpi4py import MPI` hangs the
-  same way). It is **not** a stale cache/lock or hostname problem — a fresh cache
-  and loopback-only TCP both still hang. Running under the MPI launcher avoids
-  the broken singleton-init path:
-  ```bash
-  mpiexec -n 1 python your_script.py
-  mpiexec -n 1 pytest            # e.g. the characterization suite in tests/
-  ```
-  This is still **one rank with no numerical effect** — purely a launch
-  workaround. Anyone reproducing this work will hit the hang; always use
-  `mpiexec -n 1`. See `env/environment.md` and `docs/known-issues.md`.
+Treat these as **read-only** unless a task explicitly requires regeneration, and
+**never delete or overwrite them as part of cleanup**:
 
-## IRREPLACEABLE COMPUTED RESULTS — never delete or modify
+```text
+states/  states_snapshot_prepru/  states_retired/
+snapshots/  snapshots_sparse/  multi_param_multi_branch/
+local_rom/  mass/  logs/  paper_data/  render/out/
+```
 
-These directories and files hold expensive computed results (solution
-checkpoints, snapshots, DEIM operators, sweep outputs, logs, paper figures).
-**They are not reproducible on a whim** — some represent long runs. Treat them
-as strictly read-only:
+Also be conservative with any `*.h5`, `*.npz`, or scientific `*.csv`, especially
+when not tracked by Git. Rebuilding `local_rom/` or `mass/` re-derives the norms
+every reported error is quoted in. If unsure whether a dataset is replaceable,
+**stop and report** rather than regenerate. `render/out/*.{csv,tex}` are tracked
+reproducibility assets — regenerate them only through the renderers, never by
+hand.
 
-- `states/`, `states_snapshot_prepru/`, `states_retired/`
-- `snapshots/`, `snapshots_sparse/`
-- `logs/`
-- `paper_data/`
-- `render/out/`
-- **all `*.h5`, `*.npz`, and `*.csv` files at the repository root**
+## Environment (machine-specific caveat)
 
-(These are gitignored, so git will not protect you — a wrong `rm` or overwrite
-is permanent.)
+The project uses Firedrake (with PETSc/SLEPc/MPI); a generic
+`pip install -r requirements.txt` will not reproduce it. On Ali's current
+development machine the venv is activated with:
 
-## Rules for this refactor
+```bash
+source ~/venv-firedrake/bin/activate
+```
 
-1. **Never delete or overwrite files in the results directories listed above.**
-   Read them, don't touch them. If a task seems to require regenerating one, stop
-   and ask.
-2. **Never run a full parameter sweep, diagram build, or anything expected to
-   take more than ~2 minutes without asking Ali first.** The sweep/diagram
-   drivers (`main_local.py` with `RUN_SWEEP=True`, `./run.sh`, `make runs`,
-   `make run-<TAG>`) fall in this category. Short smoke tests are fine —
-   `make tables` on a checkout without `states/` is one.
-3. **Make small, focused commits — one logical change per commit.**
-4. **Do not change numerical defaults as a side effect of refactoring** —
-   tolerances (`pod_energy_tol`, `deim_energy_tol_*`), mode counts
-   (`n_velocity_max`, `m_F_max`, …), solver settings, etc. If you believe a
-   default is wrong, **tell Ali — do not silently fix it.**
+That path is a local detail, not a portable requirement. On this machine a plain
+`import firedrake` currently **hangs** in singleton `MPI_Init`; the workaround is
+to launch under one MPI rank:
+
+```bash
+mpiexec -n 1 python your_script.py
+mpiexec -n 1 pytest
+```
+
+This is a **machine-specific workaround, not a universal project requirement.**
+Full details — versions, PETSc build, the hang analysis — are in
+`env/environment.md` and `docs/known-issues.md`.
+
+## Working discipline
+
+```text
+inspect → minimal change → test → inspect diff → continue
+```
+
+- Before repository-wide work, inspect `git status`, `git diff`,
+  `git diff --cached`. There may be legitimate unfinished work in the tree —
+  never discard or overwrite changes you do not understand.
+- Prefer cheap verification first (syntax/static → imports → light unit tests →
+  loading existing outputs → regenerating cheap artifacts) over expensive
+  regeneration. Never claim a command passed unless it was actually run; if it
+  cannot be run, say why.
+- Before deleting/archiving a file, check its references (imports, `run.sh`,
+  `Makefile`, manuscript, Git history). When uncertain, classify it as an
+  obsolete candidate rather than deleting it.
+- **Do not commit unless explicitly requested.**
+
+## Where to look
+
+Do not duplicate these here — link and defer:
+
+- **`README.md`** — project overview, install, user quick start.
+- **`docs/workflow.md`** — dependency graph, the full recomputation matrix (what
+  to rerun when style / grid / POD tolerance / `K` / `sym_start` / snapshots
+  change), and rebuilding ROM caches from existing snapshots.
+- **`docs/data.md`** — included-vs-generated data layout, `data_manifest.json`,
+  the external-data bundles and verifier.
+- **`docs/known-issues.md`** — known scientific/cache issues (e.g. the invalid
+  `*_tol1e-12` bases; global-baseline notes).
+- **`env/environment.md`** — environment reconstruction and the MPI workaround.
+- **`.claude/rules/scientific-safety.md`** — the enforced data/scientific safety
+  rules.
