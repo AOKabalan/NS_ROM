@@ -6,13 +6,13 @@
     \toprule
      & tensor & DEIM \\
     \midrule
-    Points in the replay set & \CHECK{} & \CHECK{} \\
-    Converged & 3196 & 1724 \\
-    Convergence rate & 99\% & 59\% \\
-    Median Newton iterations & 2 & 34 \\
-    Median solve time (ms) & 96.8 & 641.1 \\
-    Points with $\mu=$ NaN & 83 & 1245 \\
+    Points in the replay set & 3371 & 3371 \\
+    Converged & 3346 & 1928 \\
+    Convergence rate & 99\% & 57\% \\
+    Median Newton iterations & 2 & 32 \\
+    Median solve time (ms) & 84.7 & 602.6 \\
+    Points with $\mu=$ NaN & 83 & 1480 \\
     \bottomrule
   \end{tabular}
-  \\[2pt] \footnotesize Both arms are replayed over the same stored point set, so the denominator is fixed and the two columns are directly comparable. This is not possible in a standalone continuation sweep, where a diverged leg terminates and the DEIM arm never reaches most of the domain. Seeds are stored full-order states, so neither method inherits a warm start from the other. The $\mu=$ NaN count tracks the divergence count almost exactly, which is the substantive point: DEIM does not degrade the stability indicator near the bifurcation, it fails to reach a state at which one could be computed.
+  \\[2pt] \footnotesize Both arms are replayed over the same stored point set, so the denominator is fixed and the two columns are directly comparable. This is not possible in a standalone continuation sweep, where a diverged leg terminates and the DEIM arm never reaches most of the domain. Seeds are stored full-order states, so neither method inherits a warm start from the other. Median iterations and solve time are over each arm's \emph{converged} points only -- a diverged solve has no time to quote -- so the DEIM medians are taken over its converged subset, not the full set. The $\mu=$ NaN count is the diverged points plus a smaller number of converged points whose reduced eigenproblem has no real leading eigenvalue (a complex pair on the asymmetric branch); it therefore exceeds the divergence count rather than matching it. DEIM's near-bifurcation NaNs are overwhelmingly divergences: it fails to reach a state at which the indicator could be computed.
 \end{table}
