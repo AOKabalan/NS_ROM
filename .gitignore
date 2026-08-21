@@ -38,6 +38,9 @@ archive/
 .vscode/
 .idea/
 
+# Claude Code: share the project rules and skills, keep local settings local.
+.claude/settings.local.json
+
 # Figures
 *.png
 trials.py

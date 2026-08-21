@@ -1,8 +1,8 @@
 """
 Speed-up reporting for the bifurcation-diagram sweeps.
 
-This is the canonical ``nsrom.plotting.speedup`` implementation;
-``scripts/speedup_summary.py`` remains its compatibility and CLI wrapper.
+This is the canonical ``nsrom.plotting.speedup`` implementation, used by
+``nsrom.workflows.local_pipeline`` to print the speed-up table after a sweep.
 The current ``build_full_diagram_bare`` workflow returns a flat list of records,
 each carrying (when fom_compute=True):
 

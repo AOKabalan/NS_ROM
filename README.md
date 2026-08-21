@@ -110,6 +110,11 @@ From a fresh checkout with no `states/`, `make tables` still rebuilds
 live outside Git; a renderer rule is defined only when its runs are present, so
 make leaves committed output alone rather than regenerating it from nothing.
 
+For **what to recompute when a scientific parameter changes** — style, grid,
+POD tolerance, `K`, `sym_start`, or the training snapshots — and for rebuilding
+the ROM caches from existing snapshots without a full sweep, see
+[`docs/workflow.md`](docs/workflow.md).
+
 Tests run through one MPI rank, as does anything importing Firedrake:
 
 ```bash
