@@ -124,10 +124,39 @@ make test
 
 ## External data
 
-Scientific data kept outside Git is inventoried in `data_manifest.json`. See
-[`docs/data.md`](docs/data.md) for the `figures` and `full` bundles and the
-read-only verification workflow. A reviewed full archive is available through
-the public OneDrive/SharePoint links documented there.
+Large snapshots, ROM caches, and computed experiment states are distributed
+separately from the Git repository. They are inventoried in `data_manifest.json`.
+
+Download both archives from the links documented in
+[`docs/data.md`](docs/data.md):
+
+1. `NS_ROM_external_data_full_636bbb2.tar.zst`
+2. `NS_ROM_external_data_supplement_0664a90.tar.zst`
+
+Verify the accompanying SHA-256 checksums, then extract the archives into the
+repository root **in that order**:
+
+```bash
+tar --extract --zstd \
+  --file=/path/to/NS_ROM_external_data_full_636bbb2.tar.zst \
+  --directory=/path/to/NS_ROM
+
+tar --extract --zstd \
+  --file=/path/to/NS_ROM_external_data_supplement_0664a90.tar.zst \
+  --directory=/path/to/NS_ROM
+```
+
+Then verify the installation:
+
+```bash
+make list        # all 18 canonical run tags present
+make test-fast   # 31 passed, 3 deselected
+make paper       # regenerate manuscript artifacts from existing results
+```
+
+Without the external data, data-dependent characterization tests are skipped
+(see [`docs/data.md`](docs/data.md)). With both archives installed, all 18
+canonical run tags are available.
 
 ## Method in brief
 

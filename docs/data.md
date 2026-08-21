@@ -33,6 +33,15 @@ because they are large or expensive; direct consumers are recorded explicitly
 in the manifest. It adds 5 files and 25,201,456 bytes, for an inherited external
 total of 3,422 files and 2,599,261,901 bytes.
 
+The `supplement` bundle (manifest/source commit `0664a90`) is a small completion
+archive that finishes a `full` checkout. It adds the `mass/` matrices —
+including `mass/M_u_H1.npz`, the inner-product file the characterization tests
+load — and the four canonical experiment states that were absent from the
+original `full` archive: `states/E4_K4_deim_tol8`, `states/E9_K4_deim_tol16`,
+`states/E10_K4_tensor_near`, and `states/E15_K4_deim_tol8_near`. Extracted on top
+of `full`, it brings all 18 canonical run tags on disk and lets the fast test
+suite run in full.
+
 ## Published archive
 
 The reviewed `full` bundle from manifest/source commit `636bbb2` is published
@@ -94,6 +103,51 @@ python scripts/verify_external_data.py --bundle full
 The verifier is read-only, skips entries already tracked by Git, rejects
 absolute or escaping manifest paths, and reports missing, empty, or
 inventory-mismatched external requirements.
+
+### Supplement archive
+
+The `supplement` bundle is published the same way. Extract it into the **same**
+checkout as the `full` archive; together the two form the complete supervisor
+reproduction package.
+
+- Archive share link:
+  <https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQByPKCo0mR0T5_Vs4POURaiAYQE0IkW-770dJros7eMgfM>
+- Checksum share link:
+  <https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQARQ938avoTSrsv9IVQUP2VAWDuPds6WwUu_-XGjCSixVA?e=NsOoCq>
+
+Archive details:
+
+- Filename: `NS_ROM_external_data_supplement_0664a90.tar.zst`
+- Format: GNU tar with Zstandard compression
+- Compressed size: 77,766,448 bytes
+- Contents: `mass/` (incl. `mass/M_u_H1.npz`) and the four canonical states
+  `states/E4_K4_deim_tol8`, `states/E9_K4_deim_tol16`,
+  `states/E10_K4_tensor_near`, `states/E15_K4_deim_tol8_near`
+- SHA-256:
+  `85c866846dad79c7e05172f06c85cc7e2a2654492b721308801c3ce0550ee640`
+- Checksum filename: `NS_ROM_external_data_supplement_0664a90.tar.zst.sha256`
+
+The archive share link carries no `?e=…` token, so its download form uses
+`?download=1`; the checksum link already has a query and uses `&download=1`:
+
+```bash
+curl --disable --no-netrc --cookie '' --location --fail \
+  --output NS_ROM_external_data_supplement_0664a90.tar.zst \
+  'https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQByPKCo0mR0T5_Vs4POURaiAYQE0IkW-770dJros7eMgfM?download=1'
+
+curl --disable --no-netrc --cookie '' --location --fail \
+  --output NS_ROM_external_data_supplement_0664a90.tar.zst.sha256 \
+  'https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQARQ938avoTSrsv9IVQUP2VAWDuPds6WwUu_-XGjCSixVA?e=NsOoCq&download=1'
+```
+
+Verify, then extract on top of the full-bundle checkout:
+
+```bash
+sha256sum -c NS_ROM_external_data_supplement_0664a90.tar.zst.sha256
+tar --extract --zstd \
+  --file=/path/to/NS_ROM_external_data_supplement_0664a90.tar.zst \
+  --directory=/path/to/NS_ROM
+```
 
 The machine-local Phase 1 trash directory under `/home/ali/` is recovery
 material. It must remain untouched until the refactor is complete and must never

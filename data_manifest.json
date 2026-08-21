@@ -18,6 +18,22 @@
       "checksum_filename": "NS_ROM_external_data_full_636bbb2.tar.zst.sha256",
       "checksum_share_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQC59clv_MMsTK-41AR6F5eIAeiPL_GnfDTCr-Vyr26HPdk?e=UCrIcv",
       "checksum_download_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQC59clv_MMsTK-41AR6F5eIAeiPL_GnfDTCr-Vyr26HPdk?e=UCrIcv&download=1"
+    },
+    {
+      "provider": "OneDrive/SharePoint",
+      "bundle": "supplement",
+      "manifest_source_commit": "0664a90",
+      "archive_filename": "NS_ROM_external_data_supplement_0664a90.tar.zst",
+      "archive_share_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQByPKCo0mR0T5_Vs4POURaiAYQE0IkW-770dJros7eMgfM",
+      "archive_download_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQByPKCo0mR0T5_Vs4POURaiAYQE0IkW-770dJros7eMgfM?download=1",
+      "compressed_size_bytes": 77766448,
+      "format": "tar+zstd",
+      "sha256": "85c866846dad79c7e05172f06c85cc7e2a2654492b721308801c3ce0550ee640",
+      "checksum_filename": "NS_ROM_external_data_supplement_0664a90.tar.zst.sha256",
+      "checksum_share_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQARQ938avoTSrsv9IVQUP2VAWDuPds6WwUu_-XGjCSixVA?e=NsOoCq",
+      "checksum_download_url": "https://sissa-my.sharepoint.com/:u:/g/personal/akabalan_sissa_it/IQARQ938avoTSrsv9IVQUP2VAWDuPds6WwUu_-XGjCSixVA?e=NsOoCq&download=1",
+      "note": "The archive share link carries no ?e= token, so its direct-download form uses ?download=1 (the checksum link already has a query and uses &download=1). Uncompressed size and member count are not recorded here.",
+      "contents": "Completion archive for a full-bundle checkout: mass/ (including mass/M_u_H1.npz, the inner-product file the characterization tests load) and the four canonical experiment states absent from the full archive (states/E4_K4_deim_tol8, states/E9_K4_deim_tol16, states/E10_K4_tensor_near, states/E15_K4_deim_tol8_near). Extract into the same checkout as the full bundle."
     }
   ],
   "bundles": {
