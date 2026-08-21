@@ -78,7 +78,7 @@ define E1_K4_tensor \
     "fig:branch_errors fig:rom_overlay fig:critical_curve fig:mu_sweeps fig:local_vs_global fig:newton_cost tab:params tab:dim_comparison tab:k_sensitivity tab:critcurve" \
     "K=4 tensor, full grid, FOM on  (~2.5h)" -- \
     NSROM_K=4 NSROM_MODE=tensor NSROM_POD_TOL=1e-8 \
-    NSROM_AMPS="$FULL_AMPS" NSROM_FOM_COMPUTE=1
+    NSROM_AMPS="$FULL_AMPS" NSROM_FOM_COMPUTE=1 NSROM_SYM_START="high"
 
 # --- global baseline at the SAME tolerance. The local-ROM argument is the gap
 #     between its N and any local cluster's.
@@ -86,7 +86,7 @@ define E2_K1_tensor \
     "fig:local_vs_global tab:dim_comparison tab:k_sensitivity" \
     "K=1 tensor (global), full grid, FOM on  (~2.5h)" -- \
     NSROM_K=1 NSROM_MODE=tensor NSROM_POD_TOL=1e-8 \
-    NSROM_AMPS="$FULL_AMPS" NSROM_FOM_COMPUTE=1
+    NSROM_AMPS="$FULL_AMPS" NSROM_FOM_COMPUTE=1 NSROM_SYM_START="high"
 
 # --- DEIM at matched tolerance: the configuration a practitioner deploys.
 define E4_K4_deim_tol8 \
@@ -94,7 +94,7 @@ define E4_K4_deim_tol8 \
     "K=4 DEIM tol=1e-8, full grid, FOM off  (~40 min)" -- \
     NSROM_K=4 NSROM_MODE=deim NSROM_POD_TOL=1e-8 \
     NSROM_DEIM_TOL=1e-8 NSROM_RECOMPUTE_DEIM=1 \
-    NSROM_AMPS="$FULL_AMPS" NSROM_FOM_COMPUTE=0
+    NSROM_AMPS="$FULL_AMPS" NSROM_FOM_COMPUTE=0 NSROM_SYM_START="high"
 
 # --- K sensitivity. Coarse grid: the trend across K is the claim, not the
 #     resolution of any single diagram.
@@ -102,13 +102,13 @@ define E5_K2_tensor \
     "tab:k_sensitivity" \
     "K=2 tensor, coarse grid, FOM on  (~50 min)" -- \
     NSROM_K=2 NSROM_MODE=tensor NSROM_POD_TOL=1e-8 \
-    NSROM_AMPS="$COARSE_AMPS" NSROM_FOM_COMPUTE=1
+    NSROM_AMPS="$COARSE_AMPS" NSROM_FOM_COMPUTE=1 NSROM_SYM_START="high"
 
 define E6_K6_tensor \
     "tab:k_sensitivity" \
     "K=6 tensor, coarse grid, FOM on  (~50 min)" -- \
     NSROM_K=6 NSROM_MODE=tensor NSROM_POD_TOL=1e-8 \
-    NSROM_AMPS="$COARSE_AMPS" NSROM_FOM_COMPUTE=1
+    NSROM_AMPS="$COARSE_AMPS" NSROM_FOM_COMPUTE=1 NSROM_SYM_START="high"
 
 # --- POD-tolerance family. E1 is the tol=1e-8 member; these are the other
 #     three. Re_c comes from the mu crossing, so no FOM is needed.
@@ -118,7 +118,7 @@ for _tol in 1e-4 1e-6 1e-10; do
         "K=4 tensor, POD tol=${_tol}, FOM off  (~10 min)" -- \
         NSROM_K=4 NSROM_MODE=tensor NSROM_POD_TOL="$_tol" \
         NSROM_RECOMPUTE_POD=1 NSROM_RECOMPUTE_TENSOR=1 \
-        NSROM_AMPS="$FULL_AMPS" NSROM_FOM_COMPUTE=0
+        NSROM_AMPS="$FULL_AMPS" NSROM_FOM_COMPUTE=0 NSROM_SYM_START="high"
 done
 unset _tol
 
@@ -130,7 +130,7 @@ define E9_K4_deim_tol16 \
     NSROM_K=4 NSROM_MODE=deim NSROM_POD_TOL=1e-8 \
     NSROM_DEIM_TOL=1e-16 NSROM_RECOMPUTE_DEIM=1 \
     NSROM_RE_MIN=70 NSROM_RE_MAX=105 NSROM_RE_STEP=1 \
-    NSROM_AMPS="$NEAR_AMPS" NSROM_FOM_COMPUTE=0
+    NSROM_AMPS="$NEAR_AMPS" NSROM_FOM_COMPUTE=0 NSROM_SYM_START="high"
 
 # --- the matched tensor control on that same grid.
 define E10_K4_tensor_near \
@@ -138,7 +138,7 @@ define E10_K4_tensor_near \
     "K=4 tensor, near-bifurcation grid, FOM on  (~1h)" -- \
     NSROM_K=4 NSROM_MODE=tensor NSROM_POD_TOL=1e-8 \
     NSROM_RE_MIN=70 NSROM_RE_MAX=105 NSROM_RE_STEP=1 \
-    NSROM_AMPS="$NEAR_AMPS" NSROM_FOM_COMPUTE=1
+    NSROM_AMPS="$NEAR_AMPS" NSROM_FOM_COMPUTE=1 NSROM_SYM_START="high"
 
 # --- matched online dimension. Cap both K=1 and K=4 at cluster 1's size so the
 #     tolerance never binds and every basis has identical online cost.
@@ -148,7 +148,7 @@ define E11_K4_matchdim \
     NSROM_K=4 NSROM_MODE=tensor NSROM_POD_TOL=1e-12 \
     NSROM_NVEL_MAX=27 NSROM_NPRES_MAX=14 NSROM_NSUP_MAX=14 \
     NSROM_RECOMPUTE_POD=1 NSROM_RECOMPUTE_TENSOR=1 \
-    NSROM_AMPS="$COARSE_AMPS" NSROM_FOM_COMPUTE=1
+    NSROM_AMPS="$COARSE_AMPS" NSROM_FOM_COMPUTE=1 NSROM_SYM_START="high"
 
 define E12_K1_matchdim \
     "fig:local_vs_global tab:dim_comparison" \
@@ -156,7 +156,7 @@ define E12_K1_matchdim \
     NSROM_K=1 NSROM_MODE=tensor NSROM_POD_TOL=1e-12 \
     NSROM_NVEL_MAX=27 NSROM_NPRES_MAX=14 NSROM_NSUP_MAX=14 \
     NSROM_RECOMPUTE_POD=1 NSROM_RECOMPUTE_TENSOR=1 \
-    NSROM_AMPS="$COARSE_AMPS" NSROM_FOM_COMPUTE=1
+    NSROM_AMPS="$COARSE_AMPS" NSROM_FOM_COMPUTE=1 NSROM_SYM_START="high"
 
 # --- the a = 0 slice with stored FOM fields. Unique in carrying a principled
 #     full-order locator of the pitchfork: with no rotation the symmetric branch
@@ -166,7 +166,7 @@ define E13_K4_a0_tol1e-8 \
     "K=4 tensor, a=0 only, FOM on, fields saved  (~10 min)" -- \
     NSROM_K=4 NSROM_MODE=tensor NSROM_POD_TOL=1e-8 \
     NSROM_AMPS="$ZERO_AMP" NSROM_FOM_COMPUTE=1 \
-    NSROM_SAVE_FOM_FIELDS=1 NSROM_FOM_FIELD_STRIDE=1
+    NSROM_SAVE_FOM_FIELDS=1 NSROM_FOM_FIELD_STRIDE=1 NSROM_SYM_START="high"
 
 # --- isolates rank from grid in tab:hyperreduction. E9 used a narrower grid
 #     than E4, so part of its wider coverage was the easier problem; running
@@ -177,7 +177,7 @@ define E15_K4_deim_tol8_near \
     NSROM_K=4 NSROM_MODE=deim NSROM_POD_TOL=1e-8 \
     NSROM_DEIM_TOL=1e-8 NSROM_RECOMPUTE_DEIM=1 \
     NSROM_RE_MIN=70 NSROM_RE_MAX=105 NSROM_RE_STEP=1 \
-    NSROM_AMPS="$NEAR_AMPS" NSROM_FOM_COMPUTE=0
+    NSROM_AMPS="$NEAR_AMPS" NSROM_FOM_COMPUTE=0 NSROM_SYM_START="high"
 
 # --- replays. Every point of E1 is re-solved independently from a stored guess:
 #     no continuation, no spine, so a failure at one point cannot suppress

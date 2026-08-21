@@ -227,9 +227,17 @@ DIAGRAM_RE_RANGE = np.arange(
 )
 DIAGRAM_AMP_VALUES = _env_floats('NSROM_AMPS', [
     -1.0, -0.9, -0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1,
+    0.0,
     0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
 ])
 DIAGRAM_FOM_COMPUTE = _env_bool('NSROM_FOM_COMPUTE', True)
+# Symmetric amp-spine strategy for build_full_diagram_bare. Canonical published
+# runs used 'high' and pin it explicitly via NSROM_SYM_START in run.sh; the
+# fallback here matches diagram.py's library default so a bare invocation is
+# unchanged. Threaded explicitly into the diagram call and recorded in
+# run_meta.json, so published configuration is never inherited from a mutable
+# Python default.
+DIAGRAM_SYM_START = _env_str('NSROM_SYM_START', 'low')
 
 # --- State store ---
 STATE_DIR         = _env_str('NSROM_STATE_DIR', f"states/{RUN_TAG}")
@@ -580,6 +588,7 @@ def run_diagram(clustering, operators, deim_ops_dict, problem,
     print(f"  Re:  {DIAGRAM_RE_RANGE[0]:.1f} -> {DIAGRAM_RE_RANGE[-1]:.1f} "
           f"({len(DIAGRAM_RE_RANGE)} points)")
     print(f"  amp: {len(DIAGRAM_AMP_VALUES)} off-axis values")
+    print(f"  sym_start: {DIAGRAM_SYM_START}")
     print(f"  FOM comparison: {'on' if DIAGRAM_FOM_COMPUTE else 'off'}")
 
     results = build_full_diagram_bare(
@@ -594,6 +603,7 @@ def run_diagram(clustering, operators, deim_ops_dict, problem,
         mode=cfg.mode,
         fom_compute=DIAGRAM_FOM_COMPUTE,
         state_dir=STATE_DIR,
+        sym_start=DIAGRAM_SYM_START,
         save_fom_fields=SAVE_FOM_FIELDS,
         fom_field_stride=FOM_FIELD_STRIDE,
     )
