@@ -51,7 +51,7 @@ def _solution(values, *, converged=True, lift=0.1, coefficient=1.0):
 
 
 def _run_continue(monkeypatch, solutions, *, path, branch_id="asym+1@amp+0.10",
-                  references=None, terminate=True, tolerance=1e-5):
+                  references=None, terminate=True, tolerance=1e-5, holes=None):
     pending = list(solutions)
     solve_guesses = []
     force_calls = []
@@ -124,6 +124,7 @@ def _run_continue(monkeypatch, solutions, *, path, branch_id="asym+1@amp+0.10",
         branch_id=branch_id,
         terminate_on_collapse=terminate,
         symmetric_references=compact_references,
+        symmetric_reference_holes=holes,
         symmetry_recovery_tol=tolerance,
         state_writer=writer,
         verbose=False,
@@ -296,6 +297,68 @@ def test_missing_exact_reference_raises_without_lift_fallback(monkeypatch):
             path=[(70.0, 0.1)],
             references={},
         )
+
+
+def test_isolated_fold_point_hole_is_tolerated_during_tracing(monkeypatch):
+    # A reference missing at an interior grid Re classified up front as an
+    # isolated fold-point hole must not raise: recovery detection skips that
+    # single point and the leg continues to the next Re.
+    result, writer, guesses, _ = _run_continue(
+        monkeypatch,
+        [
+            _solution([1.0, 1.0], coefficient=3.0),
+            _solution([1.0, 1.0], coefficient=4.0),
+            _solution([1.0, 1.0], coefficient=5.0),
+        ],
+        path=[(72.0, 0.1), (71.0, 0.1), (70.0, 0.1)],
+        references={
+            (72.0, 0.1): np.array([1.0, 0.0]),
+            (70.0, 0.1): np.array([1.0, 0.0]),
+        },
+        holes={(71.0, 0.1)},
+    )
+    records, _, _, converged_states = result
+    assert len(records) == 3
+    assert len(writer.calls) == 3
+    assert len(converged_states) == 3
+
+
+def test_untolerated_missing_reference_still_raises(monkeypatch):
+    # Same missing interior point, but not in the tolerated-holes set: fatal.
+    with pytest.raises(RuntimeError, match="missing exact symmetric reference"):
+        _run_continue(
+            monkeypatch,
+            [
+                _solution([1.0, 1.0], coefficient=3.0),
+                _solution([1.0, 1.0], coefficient=4.0),
+            ],
+            path=[(72.0, 0.1), (71.0, 0.1)],
+            references={(72.0, 0.1): np.array([1.0, 0.0])},
+            holes={(69.0, 0.1)},
+        )
+
+
+def test_gap_classification_tolerates_only_isolated_interior_holes():
+    grid = [70.0, 71.0, 72.0, 73.0]
+    # Reference present everywhere except the interior point Re=72.
+    reference_map = {
+        (70.0, 0.1): object(),
+        (71.0, 0.1): object(),
+        (73.0, 0.1): object(),
+    }
+    tolerated = diagram._classify_symmetric_reference_gaps(
+        reference_map, [70.0, 71.0, 72.0, 73.0], [0.1], grid)
+    assert tolerated == {(72.0, 0.1)}
+
+
+def test_gap_classification_rejects_boundary_and_adjacent_gaps():
+    grid = [70.0, 71.0, 72.0, 73.0]
+    # Missing the top boundary (73, one-sided) and two adjacent interior points
+    # (71, 72) -- none qualify as an isolated fold-point hole.
+    reference_map = {(70.0, 0.1): object()}
+    with pytest.raises(RuntimeError, match="coverage is incomplete"):
+        diagram._classify_symmetric_reference_gaps(
+            reference_map, [70.0, 71.0, 72.0, 73.0], [0.1], grid)
 
 
 def test_nonconverged_merge_stop_breaks_before_persistence(monkeypatch):

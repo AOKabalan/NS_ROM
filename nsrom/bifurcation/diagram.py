@@ -168,22 +168,56 @@ def _reconstruct_symmetric_reference(reference, operators, *, Re, amp):
     return velocity
 
 
-def _require_symmetric_reference_coverage(reference_map, Re_values, amp_values):
-    """Fail before asymmetric tracing if any exact grid reference is missing."""
-    expected = {
-        _parameter_key(Re, amp)
-        for amp in amp_values
-        for Re in Re_values
-    }
-    missing = sorted(expected.difference(reference_map))
-    if missing:
+def _classify_symmetric_reference_gaps(
+        reference_map, Re_values, amp_values, Re_grid):
+    """Partition missing exact grid references into tolerable isolated
+    fold-point holes and fatal coverage gaps, before asymmetric tracing.
+
+    A missing (Re, amp) is an *isolated fold-point hole* when both of its
+    immediate Re-neighbours in the full continuation grid carry a stored
+    reference for the same amplitude. On the symmetric off-axis sheet these
+    occur where an integer grid Re lands on the sheet's fold: the reduced
+    Jacobian is singular there and the Newton solve stalls at max iterations,
+    while both neighbouring Re converge in a handful of iterations. These holes
+    are long-standing and reproducible (e.g. sym@amp+0.20/Re=78,
+    +0.40/Re=90, +0.50/Re=97 on the Re=20..109 grid) and never affected the
+    asymmetric physics, which is computed independently and converges there.
+    Recovery detection simply skips the single hole and resumes at the next Re.
+
+    Any other missing point -- one at a grid endpoint, or whose neighbour is
+    also missing -- signals that a leg failed to trace and stays fatal.
+
+    Returns the set of tolerated isolated holes; raises RuntimeError on any
+    fatal gap.
+    """
+    grid = sorted({float(r) for r in Re_grid})
+    pos_of = {r: i for i, r in enumerate(grid)}
+    tolerated, fatal = set(), []
+    for amp in amp_values:
+        for Re in Re_values:
+            key = _parameter_key(Re, amp)
+            if key in reference_map:
+                continue
+            i = pos_of.get(float(Re))
+            isolated = (
+                i is not None and 0 < i < len(grid) - 1
+                and _parameter_key(grid[i - 1], amp) in reference_map
+                and _parameter_key(grid[i + 1], amp) in reference_map
+            )
+            if isolated:
+                tolerated.add(key)
+            else:
+                fatal.append(key)
+    if fatal:
+        fatal_sorted = sorted(fatal)
         preview = ", ".join(
-            f"(Re={Re:g}, amp={amp:+g})" for Re, amp in missing[:8])
-        suffix = "" if len(missing) <= 8 else f", ... ({len(missing)} total)"
+            f"(Re={Re:g}, amp={amp:+g})" for Re, amp in fatal_sorted[:8])
+        suffix = "" if len(fatal_sorted) <= 8 else f", ... ({len(fatal_sorted)} total)"
         raise RuntimeError(
             "symmetric-reference coverage is incomplete before asymmetric "
             f"tracing: {preview}{suffix}"
         )
+    return tolerated
 
 
 def _fom_compare(problem, solution_rom, guess, M_u):
@@ -223,6 +257,7 @@ def _continue(
     collapse_frac=0.0001,           # break if |C_L| < collapse_frac * running peak
     symmetric_references=None,   # exact (Re, amp) -> compact symmetric state
     symmetric_reference_sink=None,  # collect converged symmetric states
+    symmetric_reference_holes=None,  # (Re, amp) isolated fold-point holes to tolerate
     symmetry_recovery_tol=DEFAULT_SYMMETRY_RECOVERY_TOL,
     fom_compute=False,           # also solve the FOM at each point (error + C_L)
     state_writer=None,           # StateWriter -> record every point for replay
@@ -316,33 +351,48 @@ def _continue(
                 and symmetric_references is not None):
             reference = symmetric_references.get(_parameter_key(Re, amp))
             if reference is None:
-                raise RuntimeError(
-                    "missing exact symmetric reference for asymmetric "
-                    f"continuation at Re={Re:g}, amplitude={amp:+g}"
-                )
-            reference_velocity = _reconstruct_symmetric_reference(
-                reference, operators, Re=Re, amp=amp)
-            recovered, symmetry_distance = classify_symmetry_recovery(
-                solution_rom.velocity.dat.data_ro,
-                reference_velocity,
-                M_u,
-                symmetry_recovery_tol,
-                converged=True,
-            )
-            if not np.isfinite(symmetry_distance):
-                raise RuntimeError(
-                    "invalid exact-reference H1 distance for asymmetric "
-                    f"continuation at Re={Re:g}, amplitude={amp:+g}"
-                )
-            if recovered:
+                # A missing reference is fatal unless this (Re, amp) was
+                # classified up front as an isolated fold-point hole: a single
+                # grid Re on the symmetric sheet's fold where the reduced
+                # Jacobian is singular and the symmetric solve stalls, with both
+                # Re neighbours converged. There is no exact reference to compare
+                # against, so skip recovery detection for this one point; the leg
+                # resumes at the next Re, which carries a reference.
+                if _parameter_key(Re, amp) not in (symmetric_reference_holes or ()):
+                    raise RuntimeError(
+                        "missing exact symmetric reference for asymmetric "
+                        f"continuation at Re={Re:g}, amplitude={amp:+g}"
+                    )
                 if verbose:
                     print(
-                        f"  [symmetry_recovered] {branch_id}: "
-                        f"Re={Re:.2f} amp={amp:+.2f} "
-                        f"distance={symmetry_distance:.6e} "
-                        f"tolerance={symmetry_recovery_tol:.6e}; stopping leg"
+                        f"  [symmetry_hole] {branch_id}: no exact reference at "
+                        f"Re={Re:.2f} amp={amp:+.2f} (isolated fold point); "
+                        f"skipping recovery test"
                     )
-                break
+            else:
+                reference_velocity = _reconstruct_symmetric_reference(
+                    reference, operators, Re=Re, amp=amp)
+                recovered, symmetry_distance = classify_symmetry_recovery(
+                    solution_rom.velocity.dat.data_ro,
+                    reference_velocity,
+                    M_u,
+                    symmetry_recovery_tol,
+                    converged=True,
+                )
+                if not np.isfinite(symmetry_distance):
+                    raise RuntimeError(
+                        "invalid exact-reference H1 distance for asymmetric "
+                        f"continuation at Re={Re:g}, amplitude={amp:+g}"
+                    )
+                if recovered:
+                    if verbose:
+                        print(
+                            f"  [symmetry_recovered] {branch_id}: "
+                            f"Re={Re:.2f} amp={amp:+.2f} "
+                            f"distance={symmetry_distance:.6e} "
+                            f"tolerance={symmetry_recovery_tol:.6e}; stopping leg"
+                        )
+                    break
 
         # --- optional debug snapshot (OFF by default) ----------------------
         # This used to be unconditional and it *aborted* every amp=0 leg at
@@ -590,6 +640,7 @@ def _offaxis_grid(
     *, terminate_on_collapse, mode, eps=0.8, jump_offset=0,
     lock_cluster=None, keep_last_converged_guess=False,
     symmetric_references=None, symmetric_reference_sink=None,
+    symmetric_reference_holes=None,
     symmetry_recovery_tol=DEFAULT_SYMMETRY_RECOVERY_TOL,
     fom_compute=False, verbose=True,state_writer=None,
 ):
@@ -624,6 +675,7 @@ def _offaxis_grid(
             keep_last_converged_guess=keep_last_converged_guess,
             symmetric_references=symmetric_references,
             symmetric_reference_sink=symmetric_reference_sink,
+            symmetric_reference_holes=symmetric_reference_holes,
             symmetry_recovery_tol=symmetry_recovery_tol,
             fom_compute=fom_compute,state_writer=state_writer, verbose=verbose)
         out += spine_records
@@ -647,6 +699,7 @@ def _offaxis_grid(
                 keep_last_converged_guess=keep_last_converged_guess,
                 symmetric_references=symmetric_references,
                 symmetric_reference_sink=symmetric_reference_sink,
+                symmetric_reference_holes=symmetric_reference_holes,
                 symmetry_recovery_tol=symmetry_recovery_tol,
                 fom_compute=fom_compute, state_writer=state_writer, verbose=verbose)
             out += leg_records
@@ -747,6 +800,7 @@ def build_full_diagram_bare(
 
     # ---- Phase 2: independent symmetric off-axis reference sheet ----------
     symmetric_references = None
+    symmetric_reference_holes = set()
     if trace_symmetric and (neg or pos):
         symmetric_references = {}
         if sym_start == 'low':
@@ -780,12 +834,18 @@ def build_full_diagram_bare(
 
         if anchors:
             try:
-                _require_symmetric_reference_coverage(
-                    symmetric_references, Re_down, neg + pos)
+                symmetric_reference_holes = _classify_symmetric_reference_gaps(
+                    symmetric_references, Re_down, neg + pos, Re_list)
             except Exception:
                 if state_writer is not None:
                     state_writer.close()
                 raise
+            if symmetric_reference_holes and verbose:
+                preview = ", ".join(
+                    f"(Re={Re:g}, amp={amp:+g})"
+                    for Re, amp in sorted(symmetric_reference_holes)[:8])
+                print(f"  [bare] tolerating {len(symmetric_reference_holes)} "
+                      f"isolated symmetric fold-point hole(s): {preview}")
 
     # ---- Phase 3: asymmetric children (terminate at numerical recovery) ---
     if anchors:
@@ -798,6 +858,7 @@ def build_full_diagram_bare(
                 mode=mode,
                 eps=eps, jump_offset=jump_offset,
                 symmetric_references=symmetric_references,
+                symmetric_reference_holes=symmetric_reference_holes,
                 symmetry_recovery_tol=symmetry_recovery_tol,
                 fom_compute=fom_compute, verbose=verbose,
                 state_writer=state_writer)
