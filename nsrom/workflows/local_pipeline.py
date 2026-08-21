@@ -587,7 +587,7 @@ def run_diagram(clustering, operators, deim_ops_dict, problem,
     print("\n--- Bifurcation diagram ---")
     print(f"  Re:  {DIAGRAM_RE_RANGE[0]:.1f} -> {DIAGRAM_RE_RANGE[-1]:.1f} "
           f"({len(DIAGRAM_RE_RANGE)} points)")
-    print(f"  amp: {len(DIAGRAM_AMP_VALUES)} off-axis values")
+    print(f"  amp: {len(DIAGRAM_AMP_VALUES)} configured values")
     print(f"  sym_start: {DIAGRAM_SYM_START}")
     print(f"  FOM comparison: {'on' if DIAGRAM_FOM_COMPUTE else 'off'}")
 
